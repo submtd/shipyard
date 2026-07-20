@@ -592,6 +592,7 @@ def _flag_value(args, *names):
 
 
 def _parse_push(args):
+    """`args` excludes the 'git' program token: it starts at the subcommand."""
     refs = []
     positionals = _positionals(args, GIT_VALUE_FLAGS)
     # positionals[0] is 'push'; [1] is the remote if present; rest are refspecs.
@@ -618,7 +619,7 @@ def _classify_segment(tokens):
         if sub == "commit":
             return Action(kind="commit")
         if sub == "push":
-            return _parse_push([prog] + args)
+            return _parse_push(args)
         return None
 
     if prog == "gh":
