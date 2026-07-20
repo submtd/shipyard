@@ -77,9 +77,13 @@ worth fixing, but not why the command stopped. What each name means:
 
 ## 4. Explain a warning
 
-Warnings mean keel could not determine something (a fact came back unknown)
-and let the action proceed rather than guess. The usual cause is a missing
-base ref - run `git fetch` and retry if you want the check to actually run.
+Most warnings mean keel could not determine something (a fact came back
+unknown) and let the action proceed rather than guess - the usual cause is a
+missing base ref; run `git fetch` and retry if you want the check to
+actually run. The `capability` warning is the one exception: it is a
+known-FALSE, not an unknown - keel asked GitHub and got a real answer
+(`viewerPermission` is below write access), it just never blocks on that
+answer alone.
 
 ## 5. Say what keel does not do
 

@@ -104,7 +104,7 @@ one raises loudly rather than silently allowing everything.
 | `prefixes.feature` | `"feature/"` | any string prefix |
 | `prefixes.release` | `"release/"` | any string prefix |
 | `prefixes.hotfix` | `"hotfix/"` | any string prefix |
-| `contributions` | `"both"` | `"fork"`, `"branch"`, `"both"` |
+| `contributions` | `"both"` | `"fork"`, `"branch"`, `"both"` (loaded, validated, and read by the `start-work` skill only -- no rule in the guard hook enforces it) |
 | `reviewPolicy` | `"review"` | `"approval"` (requires `APPROVED`), `"review"` (`APPROVED` or `COMMENTED`), `"none"` |
 | `mergeStrategy.toIntegration` | `"squash"` | `"squash"`, `"merge"`, `"rebase"` |
 | `mergeStrategy.toProduction` | `"merge"` | `"squash"`, `"merge"`, `"rebase"` |
