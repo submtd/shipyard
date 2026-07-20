@@ -310,3 +310,24 @@ def test_identical_secondary_messages_are_not_repeated():
     v = evaluate(action, Facts(pr_base=None, capability=Tri.FALSE), cfg())
     assert v.message.count("Could not determine the PR's base branch.") == 1
     assert "merge permission" in v.message
+
+
+@pytest.mark.parametrize("head", ["release/1.2.0", "main"])
+def test_release_and_back_merge_prs_are_exempt_from_the_missing_changelog_block(head):
+    # A repo with no CHANGELOG.md at all must not have its release or
+    # back-merge PRs blocked: those carry no new user-facing change of their
+    # own, so the presence check must sit behind the head-kind exemption.
+    action = Action(kind="pr-create", base="main" if head.startswith("release/") else "develop",
+                    head=head)
+    facts = Facts(branch=head, changelog_present=Tri.FALSE, changelog_ok=Tri.FALSE)
+    assert evaluate(action, facts, cfg()).decision == "allow"
+
+
+def test_feature_pr_without_a_changelog_file_gets_the_distinct_message():
+    action = Action(kind="pr-create", base="develop", head="feature/x")
+    facts = Facts(branch="feature/x", changelog_present=Tri.FALSE)
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "block"
+    assert v.rule == "changelog"
+    assert "does not exist" in v.message
+    assert "requireChangelog" in v.message
