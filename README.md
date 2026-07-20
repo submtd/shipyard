@@ -4,6 +4,66 @@ Shipyard is a suite of Claude Code plugins for project tooling. **`keel`** is
 its first member: it owns a project's git lifecycle — how work starts, how it
 lands, and how it ships.
 
+## Why this exists
+
+Most teams write their git conventions into a `CONTRIBUTING.md` that nobody
+re-reads, and then discover violations in code review — or after a bad push.
+The obvious fix is a GitHub template repo carrying the conventions and some
+hooks. keel started as exactly that, and was rewritten as a plugin for two
+reasons:
+
+- **Template repos never update.** A repo created from a template in January
+  cannot receive a February bugfix. Every derived repo forks the logic
+  permanently.
+- **A guard that ships inside the repo it guards can disable itself.** The
+  predecessor's hook matched only `Bash`, so an `Edit` to its own source
+  turned enforcement off.
+
+A plugin fixes both: the logic lives outside your repo and updates centrally.
+What stays in your repo is a small, committed `.keel.json` describing the
+topology you want.
+
+## What it looks like
+
+Committing on a protected branch:
+
+```
+$ git commit -m "quick fix"
+
+[keel/protected-write] 'main' is protected. Start a branch with
+keel:start-work; changes reach it via PR. Run keel:doctor to see the full
+picture.
+```
+
+Multiple problems in one command surface together, rather than one at a time:
+
+```
+$ git commit -m x && git push origin main
+
+[keel/protected-write] 'main' is protected. Start a branch with
+keel:start-work; changes reach it via PR. Also: [protected-write] This pushes
+directly to protected branch 'main'. Open a PR instead (keel:finish-work). Run
+keel:doctor to see the full picture.
+```
+
+And when keel can't determine something, it says so instead of guessing:
+
+```
+[keel/changelog] Could not compare against the base branch, so the CHANGELOG
+check was skipped. Run 'git fetch' and retry if you want it enforced.
+```
+
+At session start it tells Claude what this repo's lifecycle actually is:
+
+```
+This repository uses keel for its git lifecycle.
+
+- Topology: gitflow (feature/* -> PR -> develop -> release/* -> PR -> main)
+- Protected: develop, main (changes reach them via PR)
+- Review policy: review
+- Current branch: feature/parser-fix
+```
+
 ## Advisory, not enforced
 
 Read this before anything else, because it is keel's central honesty
@@ -143,3 +203,59 @@ than block on ignorance.
 The real boundary is GitHub branch protection, configured via
 `keel:protect`. keel's hook is the earlier, friendlier warning — not the
 gate.
+
+## How it's built
+
+The decision layer is a pure function with no I/O, which is what makes the
+rule table exhaustively testable:
+
+```
+plugins/keel/
+├── keel/
+│   ├── config.py    .keel.json -> Config          ┐
+│   ├── actions.py   command string -> [Action]    │ pure: no subprocess,
+│   ├── facts.py     tri-state facts               │ no I/O, no globals
+│   ├── rules.py     (action, facts, config) -> Verdict
+│   └── render.py    Verdict -> hook JSON          ┘
+│   ├── gitio.py     all git subprocess calls      ┐ all I/O, every call
+│   └── ghio.py      all gh subprocess calls       ┘ timed out
+├── hooks/
+│   ├── guard.py     PreToolUse entrypoint
+│   ├── orient.py    SessionStart entrypoint
+│   └── hooks.json   hook registration
+├── skills/          the ten skills
+└── tests/           163 tests
+```
+
+Rules key on `(action, base, head, headIsFork, capability)`. There is
+deliberately **no role concept** — no contributor/maintainer/solo inference
+from remote URLs. Fork and same-repo PRs are judged identically, which is
+what keeps a maintainer's own same-repo PR from skipping the review gate.
+
+Capability comes from GitHub (`gh repo view --json viewerPermission`), not
+from guessing at remote URLs.
+
+## Development
+
+Stdlib only at runtime — no third-party dependencies. Tests need `pytest`.
+
+```
+pip install pytest
+python3 -m pytest -q
+```
+
+CI runs the suite on Python 3.9 and 3.12.
+
+## Status
+
+`keel` is v0.1.0 and covers the git lifecycle. Planned next:
+
+- **`keel:init`** — scaffold `.keel.json`, `.github/` templates, CODEOWNERS,
+  and a changelog CI check into an existing repo.
+- Sibling Shipyard plugins for the domains keel deliberately leaves alone:
+  CI/CD pipeline authoring, dependency management, testing, and security
+  scanning.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
