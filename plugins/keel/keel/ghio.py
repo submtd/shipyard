@@ -44,7 +44,7 @@ def _review_state(data):
     decision = data.get("reviewDecision")
     if decision in ("CHANGES_REQUESTED", "APPROVED"):
         return decision
-    states = {r.get("state") for r in (data.get("reviews") or [])}
+    states = {r.get("state") for r in (data.get("reviews") or []) if isinstance(r, dict)}
     if "CHANGES_REQUESTED" in states:
         return "CHANGES_REQUESTED"
     if "APPROVED" in states:

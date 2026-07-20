@@ -68,6 +68,18 @@ def test_changes_requested_wins_over_comment(monkeypatch):
     assert ghio.pr_facts("5")["review_state"] == "CHANGES_REQUESTED"
 
 
+def test_review_state_ignores_non_dict_review_entries(monkeypatch):
+    # A malformed/unexpected `reviews[]` element (e.g. gh emitting a bare
+    # string, or a future schema change) must not raise -- degrade to
+    # ignoring that entry rather than crashing the hook.
+    monkeypatch.setattr(ghio.subprocess, "run", lambda args, **kw: FakeProc(json.dumps({
+        "baseRefName": "develop", "headRefName": "feature/x",
+        "isCrossRepository": False, "reviewDecision": None,
+        "reviews": ["not-a-dict", {"state": "APPROVED"}],
+    })))
+    assert ghio.pr_facts("5")["review_state"] == "APPROVED"
+
+
 def test_gh_failure_returns_none(monkeypatch):
     monkeypatch.setattr(ghio.subprocess, "run", lambda args, **kw: FakeProc("", 1))
     assert ghio.pr_facts("5") is None
