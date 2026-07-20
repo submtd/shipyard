@@ -35,7 +35,8 @@ def orientation(cfg, branch):
         f"- Topology: {cfg.topology} ({flow})",
         f"- Protected: {', '.join(protected)} "
         f"(changes reach {'it' if len(protected) == 1 else 'them'} via PR)",
-        f"- Review policy: {cfg.review_policy}",
+        f"- Review policy: {cfg.review_policy} "
+        f"(CHANGES_REQUESTED always blocks a merge, regardless of policy)",
         f"- Current branch: {branch or 'unknown (detached HEAD?)'}",
     ]
     if on_protected:

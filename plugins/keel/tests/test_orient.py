@@ -183,6 +183,18 @@ def test_not_a_git_repo_guard_is_load_bearing(orient, monkeypatch, capsys, tmp_p
     assert capsys.readouterr().out == ""
 
 
+def test_orientation_notes_changes_requested_always_blocks(orient, monkeypatch, capsys, tmp_path):
+    # doctor/SKILL.md says CHANGES_REQUESTED always blocks regardless of
+    # reviewPolicy; orientation must say the same thing so the two do not
+    # disagree about what keel enforces.
+    repo, _ = init_repo(tmp_path)
+    (repo / ".keel.json").write_text(json.dumps({"reviewPolicy": "none"}))
+    exit_code, out = run_orient(orient, monkeypatch, capsys, repo)
+    payload = json.loads(out)
+    ctx = payload["additionalContext"]
+    assert "CHANGES_REQUESTED" in ctx
+
+
 def test_single_protected_branch_reads_it_not_them(orient):
     from keel.config import Config
     cfg = Config(topology="trunk", production="main", integration="main",
