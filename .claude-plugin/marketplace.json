@@ -1,0 +1,13 @@
+{
+  "name": "shipyard",
+  "owner": { "name": "Steve Harmeyer" },
+  "description": "Claude Code plugins for project tooling.",
+  "plugins": [
+    {
+      "name": "keel",
+      "source": "./plugins/keel",
+      "description": "Guides a project's git lifecycle: start work, land it, ship it.",
+      "category": "workflow"
+    }
+  ]
+}
