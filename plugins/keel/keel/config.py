@@ -46,6 +46,23 @@ def _one_of(value, allowed, field):
     return value
 
 
+def _non_empty_string(value, field):
+    """Branch names and prefixes must be non-empty strings.
+
+    Predecessor's exact silent-failure mode: {"branches":{"production":5}}
+    used to sail through as production=5, so _protected() in rules.py
+    became {5, "develop"} -- a set no real branch name can ever be a member
+    of -- silently disabling the entire protected-branch rule. Reject this
+    loudly instead.
+    """
+    if not isinstance(value, str) or not value:
+        raise ConfigError(
+            f"{CONFIG_NAME}: '{field}' must be a non-empty string "
+            f"(got {value!r})."
+        )
+    return value
+
+
 def load_config(repo_root: Path) -> Optional[Config]:
     path = Path(repo_root) / CONFIG_NAME
     if not path.is_file():
@@ -74,8 +91,9 @@ def load_config(repo_root: Path) -> Optional[Config]:
     strategy = merge_strategy_raw or {}
 
     topology = _one_of(raw.get("topology", "gitflow"), TOPOLOGIES, "topology")
-    production = branches.get("production", "main")
-    integration = production if topology == "trunk" else branches.get("integration", "develop")
+    production = _non_empty_string(branches.get("production", "main"), "branches.production")
+    integration = production if topology == "trunk" else _non_empty_string(
+        branches.get("integration", "develop"), "branches.integration")
 
     # Validate requireChangelog if present
     require_changelog_value = raw.get("requireChangelog", True)
@@ -89,9 +107,9 @@ def load_config(repo_root: Path) -> Optional[Config]:
         topology=topology,
         production=production,
         integration=integration,
-        feature_prefix=prefixes.get("feature", "feature/"),
-        release_prefix=prefixes.get("release", "release/"),
-        hotfix_prefix=prefixes.get("hotfix", "hotfix/"),
+        feature_prefix=_non_empty_string(prefixes.get("feature", "feature/"), "prefixes.feature"),
+        release_prefix=_non_empty_string(prefixes.get("release", "release/"), "prefixes.release"),
+        hotfix_prefix=_non_empty_string(prefixes.get("hotfix", "hotfix/"), "prefixes.hotfix"),
         contributions=_one_of(raw.get("contributions", "both"), CONTRIBUTIONS, "contributions"),
         review_policy=_one_of(raw.get("reviewPolicy", "review"), REVIEW_POLICIES, "reviewPolicy"),
         merge_to_integration=_one_of(

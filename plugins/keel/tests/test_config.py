@@ -71,6 +71,33 @@ def test_non_boolean_require_changelog_raises(tmp_path):
     assert "requireChangelog" in str(e.value)
 
 
+@pytest.mark.parametrize("field,value", [
+    ("production", 5),
+    ("production", ""),
+    ("integration", 5),
+    ("integration", None),
+])
+def test_non_string_or_empty_branch_name_raises(tmp_path, field, value):
+    # Predecessor's exact silent-failure mode: {"branches":{"production":5}}
+    # used to yield production=5, so _protected() became {5, "develop"} and
+    # NO branch name could ever match it -- the protected-branch rule
+    # silently disabled itself.
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"branches": {field: value}}))
+    assert field in str(e.value)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("feature", 5),
+    ("release", ""),
+    ("hotfix", None),
+])
+def test_non_string_or_empty_prefix_raises(tmp_path, field, value):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"prefixes": {field: value}}))
+    assert field in str(e.value)
+
+
 def test_trunk_collapses_integration_even_with_explicit_value(tmp_path):
     """Trunk topology must collapse integration to production, ignoring explicit branches.integration."""
     cfg = load_config(write(tmp_path, {
