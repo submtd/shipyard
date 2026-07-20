@@ -236,18 +236,22 @@ RULES = {
 }
 
 
-def evaluate(action, facts, cfg):
-    """Return the most severe verdict across the rules for this action.
+def aggregate(verdicts):
+    """Reduce many verdicts to the single most severe one.
 
-    Every rule for action.kind is evaluated -- none are skipped once a block
-    or warn is found. The most severe decision wins (block > warn > allow);
-    among verdicts of that severity, the first one in RULES order supplies
-    the primary decision/rule/message. Any additional block or warn verdicts
-    are appended to the message as "Also: [rule] message" so they are not
-    silently dropped.
+    block > warn > allow. Among verdicts of the winning severity, the first
+    one (in the order given) supplies the primary decision/rule/message; any
+    additional block or warn verdicts are appended to the message as
+    "Also: [rule] message" so they are not silently dropped. Verdicts whose
+    message is identical to one already surfaced are deduplicated -- several
+    rules (or, at the guard.py level, several actions) can independently
+    report the same underlying cause, and repeating identical text just
+    makes the message harder to read.
+
+    This is shared by evaluate() (aggregating rules within one action) and
+    guard.py's main() (aggregating actions within one command) -- same
+    problem, same shape, one implementation.
     """
-    verdicts = [rule(action, facts, cfg) for rule in RULES.get(action.kind, ())]
-
     blocks = [v for v in verdicts if v.decision == "block"]
     warns = [v for v in verdicts if v.decision == "warn"]
 
@@ -258,9 +262,6 @@ def evaluate(action, facts, cfg):
     else:
         return ALLOW
 
-    # Several rules can independently report the same underlying cause (an
-    # unresolvable PR base warns from both the review and merge-strategy
-    # rules). Repeating identical text just makes the message harder to read.
     seen = {primary.message}
     extra = []
     for verdict in rest:
@@ -273,3 +274,14 @@ def evaluate(action, facts, cfg):
         return primary
     return Verdict(primary.decision, primary.rule,
                    "{} {}".format(primary.message, " ".join(extra)))
+
+
+def evaluate(action, facts, cfg):
+    """Return the most severe verdict across the rules for this action.
+
+    Every rule for action.kind is evaluated -- none are skipped once a block
+    or warn is found. See aggregate() for how multiple verdicts are reduced
+    to one.
+    """
+    verdicts = [rule(action, facts, cfg) for rule in RULES.get(action.kind, ())]
+    return aggregate(verdicts)

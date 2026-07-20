@@ -11,11 +11,13 @@ from keel.actions import classify               # noqa: E402
 from keel.config import ConfigError, load_config  # noqa: E402
 from keel.facts import Facts, Tri               # noqa: E402
 from keel.render import render                  # noqa: E402
-from keel.rules import evaluate                 # noqa: E402
+from keel.rules import aggregate, evaluate       # noqa: E402
 
 
-def gather(action, cwd, cfg):
-    branch = gitio.current_branch(cwd=cwd)
+def gather(action, cwd, cfg, branch):
+    """Facts for one action. `branch` is invariant across every action of a
+    single command (they all share `cwd`), so callers compute it once and
+    pass it in rather than re-deriving it here."""
     changelog_ok = Tri.UNKNOWN
     changelog_present = Tri.UNKNOWN
     if action.kind == "pr-create":
@@ -66,17 +68,31 @@ def main():
         cfg = load_config(root)
     except ConfigError as exc:
         # Loud, per the spec: a broken config must never silently disable keel.
-        print(json.dumps({"systemMessage": f"[keel] {exc} keel is inactive "
-                                           f"until this is fixed."}))
+        msg = str(exc)
+        sep = "" if msg.endswith((".", "!", "?")) else "."
+        print(json.dumps({"systemMessage": f"[keel] {msg}{sep} keel is "
+                                           f"inactive until this is fixed."}))
         return 0
     if cfg is None:
         return 0  # repo is not keel-managed
 
-    for action in actions:
-        verdict = evaluate(action, gather(action, cwd, cfg), cfg)
-        if verdict.decision != "allow":
-            print(json.dumps(render(verdict)))
-            return 0
+    # `cwd` is identical for every action of one command, so anything that
+    # only depends on `cwd` (the current branch) is computed once here
+    # rather than once per action inside gather().
+    branch = gitio.current_branch(cwd=cwd)
+
+    # A compound command (`git commit -m x && git push origin main`) can
+    # classify into several actions. Evaluate ALL of them -- do not stop at
+    # the first non-allow verdict -- then report the single most severe
+    # verdict across the whole command, using the same block > warn > allow
+    # reduction rules.evaluate() uses within one action. Otherwise an early
+    # warn would silently mask a later block, which defeats the point of
+    # the hook.
+    verdicts = [evaluate(action, gather(action, cwd, cfg, branch), cfg)
+                for action in actions]
+    verdict = aggregate(verdicts)
+    if verdict.decision != "allow":
+        print(json.dumps(render(verdict)))
     return 0
 
 
