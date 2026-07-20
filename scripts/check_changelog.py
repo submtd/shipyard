@@ -1,46 +1,108 @@
 #!/usr/bin/env python3
-"""CI mirror of keel's changelog rule, built on keel's own parser.
+"""CI changelog gate. Self-contained: stdlib only, no keel import, so it runs
+in any repo keel:init scaffolds it into.
 
 Fails when a work-branch PR does not add content to CHANGELOG.md's Unreleased
-section, measured against the PR base. Matches the advisory hook's policy:
-release and back-merge heads are exempt, and an indeterminate result never
-fails (unknown is not a violation) -- the hook warns there; CI stays quiet.
+section, measured against the PR base. Mirrors keel's advisory hook: release
+and back-merge heads are exempt, and an indeterminate result never fails.
 
 Usage: check_changelog.py <base-ref> <head-ref>
-The refs are branch names; the base is compared as origin/<base>.
 """
 from __future__ import annotations
 
+import json
+import re
+import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugins" / "keel"))
+CONFIG_NAME = ".keel.json"
+GIT_TIMEOUT = 5.0
+_UNRELEASED = re.compile(r"^(#{1,6})\s*\[?unreleased\]?", re.IGNORECASE)
+_HEADING = re.compile(r"^(#{1,6})\s")
 
-from keel.config import ConfigError, load_config  # noqa: E402
-from keel.gitio import changelog_gained_content, changelog_present  # noqa: E402
-from keel.rules import _kind_of_branch  # noqa: E402
+
+def _run_git(args):
+    try:
+        proc = subprocess.run(["git", *args], capture_output=True, text=True,
+                              timeout=GIT_TIMEOUT, errors="replace")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout if proc.returncode == 0 else None
 
 
-def main() -> int:
-    if len(sys.argv) != 3:
+def unreleased_body(text):
+    """Return the Unreleased section's body (blank lines stripped), collecting
+    nested sub-headings, terminating at the next same-or-shallower heading."""
+    lines, depth, collecting, body = text.splitlines(), None, False, []
+    for line in lines:
+        m = _UNRELEASED.match(line.strip())
+        if m and not collecting:
+            depth, collecting = len(m.group(1)), True
+            continue
+        if collecting:
+            h = _HEADING.match(line.strip())
+            if h and len(h.group(1)) <= depth:
+                break
+            body.append(line)
+    return "\n".join(b for b in body if b.strip())
+
+
+def load_cfg(root):
+    """Minimal, tolerant .keel.json read. Returns a flat dict of the fields the
+    gate needs, with defaults. Never raises on a bad file -- CI should not crash
+    on config; it degrades to the defaults."""
+    path = Path(root) / CONFIG_NAME
+    raw = {}
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text()) or {}
+        except (OSError, ValueError):
+            raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    branches = raw.get("branches") if isinstance(raw.get("branches"), dict) else {}
+    prefixes = raw.get("prefixes") if isinstance(raw.get("prefixes"), dict) else {}
+    topology = raw.get("topology", "gitflow")
+    production = branches.get("production", "main")
+    integration = production if topology == "trunk" else branches.get("integration", "develop")
+    return {
+        "topology": topology,
+        "production": production,
+        "integration": integration,
+        "feature_prefix": prefixes.get("feature", "feature/"),
+        "release_prefix": prefixes.get("release", "release/"),
+        "hotfix_prefix": prefixes.get("hotfix", "hotfix/"),
+        "require_changelog": bool(raw.get("requireChangelog", True)),
+    }
+
+
+def kind_of_branch(name, cfg):
+    if name == cfg["production"]:
+        return "production"
+    if name == cfg["integration"]:
+        return "integration"
+    if name.startswith(cfg["feature_prefix"]):
+        return "feature"
+    if name.startswith(cfg["release_prefix"]):
+        return "release"
+    if name.startswith(cfg["hotfix_prefix"]):
+        return "hotfix"
+    return "other"
+
+
+def main(argv):
+    if len(argv) != 3:
         print("usage: check_changelog.py <base-ref> <head-ref>", file=sys.stderr)
         return 2
-    base, head = sys.argv[1], sys.argv[2]
-
-    root = Path(".")
-    try:
-        cfg = load_config(root)
-    except ConfigError as exc:
-        print(f"::warning::keel config invalid, skipping changelog check: {exc}")
-        return 0
-    if cfg is None or not cfg.require_changelog:
+    base, head = argv[1], argv[2]
+    cfg = load_cfg(".")
+    if not cfg["require_changelog"]:
         print("changelog check not required by .keel.json")
         return 0
 
-    head_kind = _kind_of_branch(head, cfg)
-    # Mirror the hook's exemptions: release/back-merge PRs carry no new
-    # user-facing change of their own.
-    if cfg.is_trunk:
+    head_kind = kind_of_branch(head, cfg)
+    if cfg["topology"] == "trunk":
         exempt = head_kind in ("release", "production", "integration")
     else:
         exempt = head_kind not in ("feature", "hotfix")
@@ -48,24 +110,24 @@ def main() -> int:
         print(f"'{head}' ({head_kind}) is exempt from the changelog gate")
         return 0
 
-    if changelog_present(cwd=".") is False:
+    here = Path("CHANGELOG.md")
+    if not here.is_file():
         print("::error::CHANGELOG.md does not exist; create one or set "
               "requireChangelog: false in .keel.json")
         return 1
 
-    gained = changelog_gained_content(f"origin/{base}", cwd=".")
-    if gained is None:
-        print(f"::warning::could not compare CHANGELOG.md against origin/{base}; "
+    before = _run_git(["show", f"origin/{base}:CHANGELOG.md"])
+    if before is None:
+        print(f"::warning::could not read CHANGELOG.md at origin/{base}; "
               "skipping (unknown is not a violation)")
         return 0
-    if not gained:
-        print("::error::the Unreleased section of CHANGELOG.md gained no content "
-              f"on this branch. Add an entry before merging into {base}.")
-        return 1
-
-    print("CHANGELOG.md Unreleased section gained content — ok")
-    return 0
+    if unreleased_body(here.read_text()) != unreleased_body(before):
+        print("CHANGELOG.md Unreleased section gained content — ok")
+        return 0
+    print("::error::the Unreleased section of CHANGELOG.md gained no content "
+          f"on this branch. Add an entry before merging into {base}.")
+    return 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv))
