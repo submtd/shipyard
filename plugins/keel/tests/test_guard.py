@@ -193,6 +193,42 @@ def test_compound_command_all_allow_produces_no_output(guard, monkeypatch, capsy
     assert out == ""
 
 
+# --- Important 5: changelog compared against the PR's actual base, not
+# always cfg.integration ----------------------------------------------------
+
+def test_changelog_checked_against_pr_base_not_integration(guard, monkeypatch, capsys, tmp_path):
+    """A gitflow hotfix/* -> production PR must have its changelog window
+    compared against the PR's actual base (production), not cfg.integration
+    (develop). Regression: guard.py always passed cfg.integration, so a
+    hotfix that inherited an already-documented CHANGELOG.md entry from
+    production (added before develop branched, so develop never saw it) --
+    and then added NO new entry of its own -- was wrongly ALLOWED, because
+    comparing against develop's stale history made the inherited content
+    look new."""
+    repo, git = init_repo(tmp_path)
+    (repo / ".keel.json").write_text("{}")  # gitflow default: main/develop
+    git("branch", "develop")  # develop forks off main BEFORE main gets a changelog
+    git("checkout", "-q", "main")
+    (repo / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## Unreleased\n\n- Something already documented\n"
+    )
+    git("add", "-A")
+    git("commit", "-qm", "changelog already on main")
+    git("checkout", "-qb", "hotfix/urgent")
+    (repo / "fix.txt").write_text("the fix\n")
+    git("add", "-A")
+    git("commit", "-qm", "fix the urgent thing")  # no changelog edit of its own
+
+    exit_code, out = run_guard(
+        guard, monkeypatch, capsys, "gh pr create --base main", repo)
+    assert exit_code == 0
+    assert out != "", "expected a changelog block, got no output"
+    payload = json.loads(out)
+    hso = payload["hookSpecificOutput"]
+    assert hso["permissionDecision"] == "deny"
+    assert "has not gained any content" in hso["permissionDecisionReason"]
+
+
 # --- Finding 2: prove the CHANGELOG-absent correction end-to-end ----------
 
 def test_pr_create_without_changelog_reports_distinct_message(guard, monkeypatch, capsys, tmp_path):

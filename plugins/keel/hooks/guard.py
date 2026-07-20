@@ -21,7 +21,14 @@ def gather(action, cwd, cfg, branch):
     changelog_ok = Tri.UNKNOWN
     changelog_present = Tri.UNKNOWN
     if action.kind == "pr-create":
-        changelog_ok = Tri.of(gitio.changelog_gained_content(cfg.integration, cwd=cwd))
+        # Important 5: compare against the PR's ACTUAL base, not always
+        # cfg.integration -- a gitflow hotfix/* -> production PR's window
+        # must be measured against production, or the comparison is wrong
+        # in both directions (misses content that IS new relative to
+        # production, and can credit content that only looks new because
+        # develop's history is stale).
+        changelog_ok = Tri.of(
+            gitio.changelog_gained_content(action.base or cfg.integration, cwd=cwd))
         changelog_present = Tri.of(gitio.changelog_present(cwd=cwd))
     pr = ghio.pr_facts(action.pr_number, cwd=cwd) if action.kind == "pr-merge" else None
     # NB: pr_facts() returns None when `gh` itself failed (unreachable,
