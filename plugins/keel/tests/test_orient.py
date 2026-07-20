@@ -162,3 +162,34 @@ def test_unexpected_internal_exception_is_swallowed(orient, monkeypatch, capsys,
     exit_code, out = run_orient(orient, monkeypatch, capsys, repo)
     assert exit_code == 0
     assert out == ""
+
+
+# The two "produces no output" tests above go through run(), whose blanket
+# except Exception would swallow an AttributeError from a removed guard and
+# yield the same empty output. These call main() directly, with no exception
+# net, so deleting either early return makes them fail loudly.
+
+def test_no_config_guard_is_load_bearing(orient, monkeypatch, capsys, tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.chdir(tmp_path)
+    assert orient.main() == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_not_a_git_repo_guard_is_load_bearing(orient, monkeypatch, capsys, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(orient.gitio, "repo_root", lambda *a, **k: None)
+    assert orient.main() == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_single_protected_branch_reads_it_not_them(orient):
+    from keel.config import Config
+    cfg = Config(topology="trunk", production="main", integration="main",
+                 feature_prefix="feature/", release_prefix="release/",
+                 hotfix_prefix="hotfix/", contributions="both",
+                 review_policy="review", merge_to_integration="squash",
+                 merge_to_production="merge", require_changelog=True)
+    text = orient.orientation(cfg, "feature/x")
+    assert "changes reach it via PR" in text
+    assert "reach them via PR" not in text

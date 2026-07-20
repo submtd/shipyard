@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from keel import gitio                            # noqa: E402
 from keel.config import ConfigError, load_config  # noqa: E402
+from keel.render import _sentence                 # noqa: E402
 
 SKILLS = (
     "keel:start-work", "keel:finish-work", "keel:respond-to-review",
@@ -32,7 +33,8 @@ def orientation(cfg, branch):
         "This repository uses keel for its git lifecycle.",
         "",
         f"- Topology: {cfg.topology} ({flow})",
-        f"- Protected: {', '.join(protected)} (changes reach them via PR)",
+        f"- Protected: {', '.join(protected)} "
+        f"(changes reach {'it' if len(protected) == 1 else 'them'} via PR)",
         f"- Review policy: {cfg.review_policy}",
         f"- Current branch: {branch or 'unknown (detached HEAD?)'}",
     ]
@@ -53,9 +55,10 @@ def main():
     try:
         cfg = load_config(root)
     except ConfigError as exc:
-        msg = str(exc)
-        sep = "" if msg.endswith((".", "!", "?")) else "."
-        print(json.dumps({"additionalContext": f"[keel] {msg}{sep} keel is inactive."}))
+        print(json.dumps({
+            "additionalContext": "[keel] {} keel is inactive.".format(
+                _sentence(str(exc)))
+        }))
         return 0
     if cfg is None:
         return 0  # repo is not keel-managed
