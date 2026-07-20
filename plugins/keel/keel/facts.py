@@ -30,6 +30,7 @@ class Facts:
     pr_is_fork: Tri = Tri.UNKNOWN
     pr_review_state: str | None = None
     changelog_ok: Tri = Tri.UNKNOWN
+    changelog_present: Tri = Tri.UNKNOWN
 
     @classmethod
     def unknown(cls):

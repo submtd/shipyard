@@ -131,6 +131,15 @@ def _rule_changelog(action, facts, cfg):
     # Release and back-merge PRs carry no new user-facing change of their own.
     if head_kind not in ("feature", "hotfix"):
         return ALLOW
+    # A wholly absent CHANGELOG.md gets its own, more actionable message --
+    # distinct from "the Unreleased section has not gained any content",
+    # which implies a file that exists but wasn't edited. Tri.UNKNOWN here
+    # falls through to the existing logic rather than blocking, per the
+    # fail policy (UNKNOWN never blocks).
+    if facts.changelog_present is Tri.FALSE:
+        return _block("changelog",
+                      "CHANGELOG.md does not exist; create one or set "
+                      "requireChangelog: false in .keel.json")
     if facts.changelog_ok is Tri.UNKNOWN:
         return _warn("changelog",
                      "Could not compare against the base branch, so the "

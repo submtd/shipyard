@@ -29,6 +29,7 @@ def test_unknown_factory_is_all_unknown():
     assert f.pr_is_fork is Tri.UNKNOWN
     assert f.pr_review_state is None
     assert f.changelog_ok is Tri.UNKNOWN
+    assert f.changelog_present is Tri.UNKNOWN
 
 
 def test_facts_is_frozen():

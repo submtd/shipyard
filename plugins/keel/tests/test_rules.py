@@ -151,6 +151,38 @@ def test_changelog_gate_disabled_by_config():
     assert evaluate(action, Facts(branch="feature/x", changelog_ok=Tri.FALSE), c).decision == "allow"
 
 
+def test_absent_changelog_blocks_with_distinct_message():
+    # Finding 4: a wholly absent CHANGELOG.md should block with a distinct,
+    # actionable message -- not the confusing "has not gained any content"
+    # text, which implies a file that exists but wasn't edited.
+    action = Action(kind="pr-create", base="develop", head="feature/x")
+    facts = Facts(branch="feature/x", changelog_present=Tri.FALSE, changelog_ok=Tri.FALSE)
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "block"
+    assert v.rule == "changelog"
+    assert "does not exist" in v.message
+    assert "requireChangelog" in v.message
+    assert "has not gained" not in v.message
+
+
+def test_unknown_changelog_presence_does_not_block():
+    # Tri.UNKNOWN must never block (fail policy). Presence unknown falls
+    # through to the existing changelog_ok handling.
+    action = Action(kind="pr-create", base="develop", head="feature/x")
+    facts = Facts(branch="feature/x", changelog_present=Tri.UNKNOWN, changelog_ok=Tri.UNKNOWN)
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "warn"
+
+
+def test_present_but_unchanged_changelog_gives_original_message():
+    action = Action(kind="pr-create", base="develop", head="feature/x")
+    facts = Facts(branch="feature/x", changelog_present=Tri.TRUE, changelog_ok=Tri.FALSE)
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "block"
+    assert "has not gained any content" in v.message
+    assert "does not exist" not in v.message
+
+
 # --- Rule 4: merge strategy ----------------------------------------------
 
 def test_non_squash_merge_into_integration_blocks():
