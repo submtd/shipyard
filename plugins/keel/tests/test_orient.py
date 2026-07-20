@@ -97,10 +97,10 @@ def test_trunk_config_describes_trunk_flow_without_integration_or_release(orient
     payload = json.loads(out)
     ctx = payload["additionalContext"]
     assert "trunk" in ctx
+    assert "main" in ctx
     # No separate integration branch or release branches for trunk.
     assert "develop" not in ctx
     assert "release/" not in ctx
-    assert ctx.count("main") == ctx.count("main")  # sanity: main appears
     # Protected list must not list a distinct integration branch alongside production.
     protected_line = [l for l in ctx.splitlines() if l.startswith("- Protected:")][0]
     assert protected_line.count(",") == 0
