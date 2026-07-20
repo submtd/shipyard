@@ -107,6 +107,44 @@ def test_trunk_topology_allows_feature_into_production():
     assert evaluate(action, facts, c).decision != "block"
 
 
+@pytest.mark.parametrize("head", ["fix/x", "docs/y", "chore/z", "feature/a", "hotfix/b", "anything"])
+def test_trunk_accepts_any_work_branch_into_production(head):
+    action = Action(kind="pr-create", base="main", head=head)
+    facts = Facts(branch=head, changelog_ok=Tri.TRUE, changelog_present=Tri.TRUE)
+    assert evaluate(action, facts, cfg(topology="trunk", integration="main")).decision != "block"
+
+
+def test_trunk_still_rejects_production_into_itself():
+    action = Action(kind="pr-create", base="main", head="main")
+    facts = Facts(branch="main", changelog_ok=Tri.TRUE, changelog_present=Tri.TRUE)
+    v = evaluate(action, facts, cfg(topology="trunk", integration="main"))
+    assert v.decision == "block" and v.rule == "pr-edge"
+
+
+@pytest.mark.parametrize("head", ["fix/x", "docs/y", "chore/z"])
+def test_trunk_changelog_gate_applies_to_arbitrary_work_branches(head):
+    action = Action(kind="pr-create", base="main", head=head)
+    facts = Facts(branch=head, changelog_ok=Tri.FALSE, changelog_present=Tri.TRUE)
+    v = evaluate(action, facts, cfg(topology="trunk", integration="main"))
+    assert v.decision == "block" and v.rule == "changelog"
+
+
+def test_gitflow_still_rejects_fix_branch_into_integration():
+    # Gitflow behavior must be unchanged: only feature/* is a valid work edge.
+    action = Action(kind="pr-create", base="develop", head="fix/x")
+    facts = Facts(branch="fix/x", changelog_ok=Tri.TRUE, changelog_present=Tri.TRUE)
+    v = evaluate(action, facts, cfg())  # default gitflow
+    assert v.decision == "block" and v.rule == "pr-edge"
+
+
+def test_gitflow_fix_branch_not_subject_to_changelog_gate():
+    # Under gitflow a non-feature/hotfix branch is exempt from changelog, as before.
+    # (It is already blocked by pr-edge; this pins the changelog rule in isolation.)
+    action = Action(kind="pr-create", base="develop", head="fix/x")
+    facts = Facts(branch="fix/x", changelog_ok=Tri.FALSE, changelog_present=Tri.TRUE)
+    assert _rule_changelog(action, facts, cfg()).decision == "allow"
+
+
 # --- Rule 3: changelog ----------------------------------------------------
 
 def test_feature_pr_without_changelog_blocks():

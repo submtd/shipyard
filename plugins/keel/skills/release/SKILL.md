@@ -12,13 +12,14 @@ description: Use when preparing a release - picks the version, rolls the changel
 Read the `Unreleased` section of `CHANGELOG.md`.
 
 **Under `trunk` topology, stop here and skip to `keel:ship`.** There is no
-integration branch and no release branch or PR - `pr-edge` only allows
-`feature|hotfix -> production` under trunk, so a release branch has nowhere
-valid to land. Every change already reached `production` directly through its
-own PR; a release under trunk is just picking a point on `production`'s
-history, rolling the changelog there, and tagging it. The rest of this skill
-(steps 2-5) is the gitflow/github-flow path, where a release branch batches
-several integrated changes before they reach `production`.
+integration branch and no release branch or PR - under trunk, `pr-edge`
+allows any branch into `production` except the production/integration branch
+targeting itself, but a `release/*` branch still has nothing distinct to
+carry: every change already reached `production` directly through its own
+PR. A release under trunk is just picking a point on `production`'s history,
+rolling the changelog there, and tagging it. The rest of this skill (steps
+2-5) is the gitflow/github-flow path, where a release branch batches several
+integrated changes before they reach `production`.
 
 ## 2. Choose the version
 

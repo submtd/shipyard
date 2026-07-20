@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `keel`: under `trunk` topology, `pr-edge` now accepts any branch into
+  production, not only `feature/*` and `hotfix/*` -- trunk-based development
+  is not prefix-strict the way gitflow is. The `changelog` gate still applies
+  to all trunk work branches (previously it only applied to `feature/*`/
+  `hotfix/*`, silently exempting anything else).
+
 ### Fixed
 
 - `plugin.json` no longer double-registers `hooks/hooks.json`, which Claude

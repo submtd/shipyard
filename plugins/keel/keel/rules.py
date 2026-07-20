@@ -92,7 +92,12 @@ def _rule_protected_write(action, facts, cfg):
 
 def _valid_edge(head_kind, base, cfg):
     if cfg.is_trunk:
-        return (head_kind in ("feature", "hotfix") and base == cfg.production)
+        # Trunk-based development is not prefix-strict: any short-lived branch
+        # may PR into production. The only invalid trunk edge is a protected
+        # branch targeting production (e.g. production -> production). Under
+        # trunk, integration == production, so "integration" and "production"
+        # name the same branch here; listing both is harmless and future-proof.
+        return base == cfg.production and head_kind not in ("production", "integration")
     return (
         (head_kind == "feature" and base == cfg.integration)
         or (head_kind == "release" and base == cfg.production)
@@ -128,8 +133,16 @@ def _rule_changelog(action, facts, cfg):
         return _warn("changelog",
                      "Could not determine the head branch's kind, so the "
                      "CHANGELOG check was skipped.")
-    # Release and back-merge PRs carry no new user-facing change of their own.
-    if head_kind not in ("feature", "hotfix"):
+    if cfg.is_trunk:
+        # Under trunk any work branch carries the release's user-facing change,
+        # so the gate applies to all of them -- but not to release branches
+        # (already-rolled) or the trunk branch itself.
+        exempt = head_kind in ("release", "production", "integration")
+    else:
+        # Release and back-merge PRs carry no new user-facing change of their
+        # own.
+        exempt = head_kind not in ("feature", "hotfix")
+    if exempt:
         return ALLOW
     # A wholly absent CHANGELOG.md gets its own, more actionable message --
     # distinct from "the Unreleased section has not gained any content",

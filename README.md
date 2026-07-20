@@ -111,9 +111,11 @@ one raises loudly rather than silently allowing everything.
 | `requireChangelog` | `true` | `true`, `false` |
 
 Under `trunk` topology there is no integration branch and no release
-branches: `feature/*` and `hotfix/*` both merge straight to production, and
-`mergeStrategy.toIntegration` / `mergeStrategy.toProduction` still apply as
-configured but the integration edge never fires.
+branches: any branch merges straight to production (trunk-based development
+is not prefix-strict the way gitflow is), and `mergeStrategy.toIntegration` /
+`mergeStrategy.toProduction` still apply as configured but the integration
+edge never fires. The changelog gate still applies to every work branch, not
+just `feature/*`/`hotfix/*`.
 
 This repository's own [`.keel.json`](.keel.json) uses `trunk`, since it has
 no `develop` branch.
@@ -158,10 +160,15 @@ in `[keel/<rule-name>]` messages.
 - **`pr-edge`** — triggers when a PR's head/base pair isn't a valid edge for
   the configured topology (e.g. `feature/* → integration`, `release/* →
   production`, `hotfix/* → production`, or the `production → integration`
-  back-merge; under trunk, `feature/*` and `hotfix/* → production` only).
-- **`changelog`** — triggers on a `feature`/`hotfix` PR whose CHANGELOG.md
-  Unreleased section has gained no content (or doesn't exist), when
-  `requireChangelog` is true. Release and back-merge PRs are exempt.
+  back-merge; under trunk, any branch may target production -- it is not
+  prefix-strict -- except the production/integration branch targeting
+  itself).
+- **`changelog`** — triggers when a PR's CHANGELOG.md Unreleased section has
+  gained no content (or doesn't exist), when `requireChangelog` is true.
+  Under gitflow this applies only to `feature`/`hotfix` PRs; release and
+  back-merge PRs are exempt. Under trunk it applies to every work branch
+  (any branch is a valid work branch there), except release branches and the
+  production/integration branch itself.
 - **`merge-strategy`** — triggers when a PR merge's strategy doesn't match
   the one configured for its base (`mergeStrategy.toIntegration` /
   `mergeStrategy.toProduction`).
