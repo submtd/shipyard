@@ -33,7 +33,7 @@ thesis intact: the same reason CI *pipeline authoring* was deferred to `rigging`
 | `.github/ISSUE_TEMPLATE/bug_report.md` | bug template |
 | `.github/ISSUE_TEMPLATE/feature_request.md` | feature template |
 | `.github/workflows/changelog.yml` | the server-side changelog gate |
-| `scripts/check_changelog.py` | the gate's implementation, reusing `keel.gitio`/`keel.rules` |
+| `scripts/check_changelog.py` | the gate's implementation — **self-contained** (stdlib only, no `keel` import) so it runs in any repo, since `keel` is not installed in a scaffolded target |
 | `CODEOWNERS` | scaffold with a comment explaining the format; user fills owners |
 | `LICENSE` | only if the user picks one; skipped otherwise |
 
@@ -41,6 +41,17 @@ The `changelog.yml` and `check_changelog.py` are **copied verbatim** from the
 versions proven on the shipyard repo itself — one source of truth, not
 regenerated per-repo. This is the artifact `keel:protect` step 5 already offers
 to write; `init` ships it up front.
+
+**Portability constraint:** `check_changelog.py` must be **self-contained** —
+stdlib only, no `keel` import. A scaffolded target repo does not have the keel
+package installed, so a script that did `import keel` would fail in exactly the
+repos `init` targets. It therefore inlines the small amount of logic it needs
+(parse `.keel.json` for topology/prefixes/`requireChangelog`, apply the
+release/back-merge exemption, diff the CHANGELOG `Unreleased` section against the
+base). This is a deliberate, tested duplication of a slice of `keel.gitio`/
+`keel.rules`. shipyard's own `scripts/check_changelog.py` is made self-contained
+too, so the shipped template stays byte-identical to the copy this repo runs
+(enforced by a drift-guard test).
 
 ## Behavior
 
