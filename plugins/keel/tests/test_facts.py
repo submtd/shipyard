@@ -1,4 +1,6 @@
 """Tests for tri-state facts and enforcement of explicit comparison."""
+import dataclasses
+
 import pytest
 from keel.facts import Facts, Tri
 
@@ -30,5 +32,5 @@ def test_unknown_factory_is_all_unknown():
 
 
 def test_facts_is_frozen():
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         Facts.unknown().branch = "main"
