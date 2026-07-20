@@ -11,7 +11,10 @@
 ## Global Constraints
 
 - **Runtime dependencies: stdlib only.** No `bashlex`, no `requests`, no `pyyaml`. Tests may use pytest.
-- **Python 3.10+** (uses `X | None` union syntax and `match` is permitted).
+- **Python 3.9+.** The hook runs under whatever `python3` is on the user's PATH, which is
+  commonly 3.9 (it is on the author's machine). Every module that uses `X | None` annotation
+  syntax MUST begin with `from __future__ import annotations`. Do not use `match`, and do not
+  use `X | Y` outside an annotation context (e.g. not in `isinstance`).
 - **The hook is advisory, not a security control.** Never add adversarial shell parsing. Correct *messages* matter; total coverage does not.
 - **One fail policy: `unknown` → warn, never block.** Applied uniformly, no exceptions.
 - **Every `subprocess.run` call MUST pass `timeout=`.** No exceptions.
@@ -167,9 +170,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
       - run: pip install pytest
       - run: python -m pytest -v
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
 ```
 
 - [ ] **Step 7: Commit**
@@ -586,6 +592,7 @@ def _flag_value(args, *names):
 
 
 def _parse_push(args):
+    """`args` excludes the 'git' program token: it starts at the subcommand."""
     refs = []
     positionals = _positionals(args, GIT_VALUE_FLAGS)
     # positionals[0] is 'push'; [1] is the remote if present; rest are refspecs.
@@ -612,7 +619,7 @@ def _classify_segment(tokens):
         if sub == "commit":
             return Action(kind="commit")
         if sub == "push":
-            return _parse_push([prog] + args)
+            return _parse_push(args)
         return None
 
     if prog == "gh":
@@ -1529,7 +1536,28 @@ def test_malformed_json_returns_none(monkeypatch):
     assert ghio.pr_facts("5") is None
 
 
-def test_capability_true(monkeypatch):
+@pytest.mark.parametrize("perm,expected", [
+    ("ADMIN", Tri.TRUE), ("MAINTAIN", Tri.TRUE), ("WRITE", Tri.TRUE),
+    ("READ", Tri.FALSE), ("TRIAGE", Tri.FALSE),
+])
+def test_capability_from_viewer_permission(monkeypatch, perm, expected):
+    monkeypatch.setattr(ghio.subprocess, "run", lambda args, **kw: FakeProc(
+        json.dumps({"viewerPermission": perm})))
+    assert ghio.capability() is expected
+
+
+def test_capability_never_requests_raw_jq_output(monkeypatch):
+    # Regression: `-q .viewerPermission` makes gh emit a bare word, which is
+    # not valid JSON, so json.loads always failed and this path never worked.
+    seen = []
+    monkeypatch.setattr(ghio.subprocess, "run",
+                        lambda args, **kw: seen.append(args) or FakeProc(
+                            json.dumps({"viewerPermission": "ADMIN"})))
+    ghio.capability()
+    assert "-q" not in seen[0], "capability() must parse JSON, not jq output"
+
+
+def test_capability_from_permissions_object(monkeypatch):
     monkeypatch.setattr(ghio.subprocess, "run", lambda args, **kw: FakeProc(
         json.dumps({"push": True, "maintain": False, "admin": False})))
     assert ghio.capability() is Tri.TRUE
@@ -1641,17 +1669,15 @@ def capability(cwd=None):
     key = ("cap", cwd)
     if key in _cache:
         return _cache[key]
-    data = _gh_json(
-        ["repo", "view", "--json", "viewerPermission",
-         "-q", ".viewerPermission"], cwd=cwd)
-    if data is None:
-        # Fall back to the permissions object shape used by `gh api`.
-        data = _gh_json(["api", "repos/{owner}/{repo}", "-q", ".permissions"], cwd=cwd)
-    if data is None:
-        result = Tri.UNKNOWN
-    elif isinstance(data, str):
-        result = Tri.of(data in ("ADMIN", "MAINTAIN", "WRITE"))
+    # NB: no `-q` here. With `-q` gh emits a bare word like `ADMIN`, which is
+    # not valid JSON, so json.loads would always fail and this path would
+    # silently never work. Ask for the object and read the field ourselves.
+    data = _gh_json(["repo", "view", "--json", "viewerPermission"], cwd=cwd)
+    if isinstance(data, dict) and "viewerPermission" in data:
+        perm = data.get("viewerPermission")
+        result = Tri.of(perm in ("ADMIN", "MAINTAIN", "WRITE")) if perm else Tri.UNKNOWN
     elif isinstance(data, dict):
+        # `gh api repos/{owner}/{repo}` shape: a permissions object.
         result = Tri.of(bool(data.get("push") or data.get("maintain")
                              or data.get("admin")))
     else:
