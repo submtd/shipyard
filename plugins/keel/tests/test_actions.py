@@ -109,6 +109,35 @@ def test_pr_create_with_short_value_flag_before_positional():
     assert (a.kind, a.base) == ("pr-create", "develop")
 
 
+# --- Critical 2: push destinations must normalize --------------------------
+
+def test_push_force_prefix_is_stripped_from_dst():
+    (a,) = classify("git push origin +main")
+    assert [(r.src, r.dst, r.is_tag) for r in a.refs] == [("main", "main", False)]
+
+
+def test_push_refs_heads_prefix_is_stripped_from_dst():
+    (a,) = classify("git push origin HEAD:refs/heads/main")
+    assert [(r.src, r.dst, r.is_tag) for r in a.refs] == [("HEAD", "main", False)]
+
+
+def test_push_force_prefix_with_refspec_colon():
+    (a,) = classify("git push origin +HEAD:main")
+    assert [(r.src, r.dst, r.is_tag) for r in a.refs] == [("HEAD", "main", False)]
+
+
+def test_push_bare_refs_heads_dst_normalizes():
+    (a,) = classify("git push origin refs/heads/main")
+    assert [(r.src, r.dst, r.is_tag) for r in a.refs] == [
+        ("refs/heads/main", "main", False)]
+
+
+def test_push_tag_ref_unaffected_by_normalization():
+    (a,) = classify("git push origin refs/tags/v1.0.0")
+    assert a.refs[0].dst == "refs/tags/v1.0.0"
+    assert a.refs[0].is_tag is True
+
+
 @pytest.mark.parametrize("cmd,kind,number,base", [
     ("gh -R owner/repo pr merge 5", "pr-merge", "5", None),
     ("gh --repo owner/repo pr merge --squash 5", "pr-merge", "5", None),

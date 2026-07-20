@@ -36,34 +36,6 @@ def test_detached_head_is_none(tmp_path):
     assert gitio.current_branch(cwd=repo) is None
 
 
-def test_origin_slug_is_lowercased(tmp_path):
-    repo, git = init_repo(tmp_path)
-    git("remote", "add", "origin", "git@github.com:Owner/Repo.git")
-    assert gitio.origin_slug(cwd=repo) == "owner/repo"
-
-
-def test_origin_slug_https(tmp_path):
-    repo, git = init_repo(tmp_path)
-    git("remote", "add", "origin", "https://github.com/Owner/Repo.git")
-    assert gitio.origin_slug(cwd=repo) == "owner/repo"
-
-
-def test_origin_slug_https_trailing_slash(tmp_path):
-    repo, git = init_repo(tmp_path)
-    git("remote", "add", "origin", "https://github.com/Owner/Repo/")
-    assert gitio.origin_slug(cwd=repo) == "owner/repo"
-
-
-def test_origin_slug_local_path_is_none(tmp_path):
-    # Finding 5: a bare local filesystem remote must not yield a slug --
-    # matching any two trailing path segments produced a confident, wrong
-    # owner/repo (e.g. "repos/myproject").
-    repo, git = init_repo(tmp_path)
-    other = tmp_path.parent / "repos" / "myproject"
-    git("remote", "add", "origin", str(other))
-    assert gitio.origin_slug(cwd=repo) is None
-
-
 def test_changelog_gained_content_true(tmp_path):
     repo, git = init_repo(tmp_path)
     (repo / "CHANGELOG.md").write_text("# Changelog\n\n## Unreleased\n")
@@ -87,6 +59,48 @@ def test_changelog_whitespace_only_is_false(tmp_path):
 def test_changelog_missing_base_is_none(tmp_path):
     repo, _ = init_repo(tmp_path)
     assert gitio.changelog_gained_content("nonexistent-branch", cwd=repo) is None
+
+
+# --- Important 6: base ref falls back to origin/<base> when the bare local
+# branch does not exist (a fresh clone that only ever checked out the
+# feature branch never has 'develop' locally). ------------------------------
+
+def test_changelog_gained_content_falls_back_to_origin_base(tmp_path):
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+
+    def git_up(*args):
+        subprocess.run(["git", *args], cwd=upstream, check=True,
+                       capture_output=True, text=True)
+    git_up("init", "-q", "-b", "main")
+    git_up("config", "user.email", "t@example.com")
+    git_up("config", "user.name", "T")
+    (upstream / "CHANGELOG.md").write_text("# Changelog\n\n## Unreleased\n")
+    git_up("add", "-A")
+    git_up("commit", "-qm", "init")
+
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(upstream), str(clone)],
+                   check=True, capture_output=True, text=True)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=clone, check=True,
+                       capture_output=True, text=True)
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "T")
+    git("checkout", "-qb", "feature/x")
+    (clone / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## Unreleased\n\n- Added a thing\n"
+    )
+    git("add", "-A")
+    git("commit", "-qm", "entry")
+    # Simulate a clone that only ever checked out the feature branch: drop
+    # the local 'main' created automatically by `git clone`, leaving only
+    # 'origin/main'.
+    git("branch", "-D", "main")
+
+    assert gitio.run_git(["rev-parse", "--verify", "--quiet", "main"], cwd=clone) is None
+    assert gitio.changelog_gained_content("main", cwd=clone) is True
 
 
 # --- Finding 1: nested subheadings inside Unreleased -----------------------
@@ -232,3 +246,23 @@ def test_target_cwd_honours_git_C():
 
 def test_target_cwd_defaults():
     assert gitio.target_cwd("git commit -m x", "/here") == "/here"
+
+
+# --- Critical 1: -C/-c AFTER the subcommand is a commit flag, not a cwd
+# override. `git commit -C HEAD~1` reuses HEAD~1's message; it must not be
+# mistaken for the global `-C <path>` flag. ---------------------------------
+
+def test_target_cwd_ignores_dash_cap_c_after_subcommand():
+    assert gitio.target_cwd("git commit -C HEAD~1 -m x", "/here") == "/here"
+
+
+def test_target_cwd_ignores_dash_c_after_subcommand():
+    assert gitio.target_cwd("git commit -c HEAD~1", "/here") == "/here"
+
+
+def test_target_cwd_honours_git_dir_before_subcommand():
+    assert gitio.target_cwd("git --git-dir /other/.git commit -m x", "/here") == "/other/.git"
+
+
+def test_target_cwd_honours_work_tree_before_subcommand():
+    assert gitio.target_cwd("git --work-tree /other commit -m x", "/here") == "/other"

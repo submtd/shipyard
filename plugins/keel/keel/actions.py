@@ -56,6 +56,7 @@ def _segments(command):
     """
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    lexer.commenters = ""
     out, current = [], []
     try:
         for token in lexer:
@@ -108,19 +109,51 @@ def _flag_value(args, *names):
     return None
 
 
+def _global_flag_value(args, names):
+    """Value of a global git flag (one of `names`) if it appears BEFORE the
+    first positional (the subcommand). This is the same "flags belong to
+    whichever side of the subcommand they're on" rule _positionals() and
+    classify() already rely on: `git -C /x commit` changes directory, but
+    `git commit -C HEAD~1` is the commit subcommand's own (unrelated) flag
+    and must not be mistaken for the global one. Used by gitio.target_cwd so
+    it shares this tokenizer instead of re-scanning the whole token list."""
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in names and i + 1 < len(args):
+            return args[i + 1]
+        if a in GIT_VALUE_FLAGS:
+            i += 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        break  # first positional: the subcommand. Stop -- anything after
+               # this point belongs to the subcommand, not to git itself.
+    return None
+
+
 def _parse_push(args):
     """`args` excludes the 'git' program token: it starts at the subcommand."""
     refs = []
     positionals = _positionals(args, GIT_VALUE_FLAGS)
     # positionals[0] is 'push'; [1] is the remote if present; rest are refspecs.
     for spec in positionals[2:]:
-        if ":" in spec:
-            src, dst = spec.split(":", 1)
+        # '+' is a modifier on the WHOLE refspec ('+src:dst'), not on src
+        # alone -- strip it before splitting so a force-push refspec still
+        # resolves to the same dst a plain push to that branch would.
+        body = spec[1:] if spec.startswith("+") else spec
+        if ":" in body:
+            src, dst = body.split(":", 1)
         else:
-            src = dst = spec
+            src = dst = body
         # A ref is a tag only when it says so explicitly. '--tags' elsewhere in
-        # the command does NOT make a branch refspec a tag.
+        # the command does NOT make a branch refspec a tag. Checked on the
+        # pre-normalized dst so a 'refs/tags/...' destination is unaffected
+        # by the 'refs/heads/' stripping below.
         is_tag = bool(TAG_REF.match(dst))
+        if dst.startswith("refs/heads/"):
+            dst = dst[len("refs/heads/"):]
         refs.append(PushRef(src=src or None, dst=dst, is_tag=is_tag))
     return Action(kind="push", refs=tuple(refs))
 
@@ -143,8 +176,6 @@ def _classify_segment(tokens):
         # First pass: detect subcommand using union of value flags
         pos = _positionals(args, GH_ANY_VALUE_FLAGS)
         if len(pos) >= 2 and pos[0] == "pr" and pos[1] == "create":
-            # Re-parse with create-specific value flags to get all positionals
-            pos = _positionals(args, GH_CREATE_VALUE_FLAGS)
             return Action(
                 kind="pr-create",
                 base=_flag_value(args, "--base", "-B"),

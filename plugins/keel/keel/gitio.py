@@ -2,20 +2,13 @@
 from __future__ import annotations
 
 import re
-import shlex
 import subprocess
 from pathlib import Path
 
+from . import actions as _actions
+
 GIT_TIMEOUT = 5.0
 
-# Recognizably GitHub-style remotes only:
-#   SSH scp-like form:  git@host:owner/repo(.git)
-#   URL form w/ scheme: https://host/owner/repo(.git), ssh://git@host/owner/repo(.git)
-# A bare local filesystem path (e.g. /Users/x/repos/myproject) must not match.
-_SLUG = re.compile(
-    r"^(?:[\w.-]+@[\w.-]+:|\w+://(?:[^@/]+@)?[^/]+/)"
-    r"([^/]+)/([^/]+?)(?:\.git)?/?$"
-)
 _UNRELEASED = re.compile(r"^(#{1,6})\s*\[?unreleased\]?", re.IGNORECASE)
 
 
@@ -40,16 +33,6 @@ def repo_root(cwd=None):
 def current_branch(cwd=None):
     out = run_git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd=cwd)
     return out or None
-
-
-def origin_slug(cwd=None):
-    url = run_git(["remote", "get-url", "origin"], cwd=cwd)
-    if not url:
-        return None
-    match = _SLUG.search(url)
-    if not match:
-        return None
-    return f"{match.group(1)}/{match.group(2)}".lower()
 
 
 def _unreleased_body(text):
@@ -101,20 +84,26 @@ def _ref_resolves(ref, cwd=None):
     return proc.returncode == 0
 
 
-def _file_exists_at_ref(ref, path, cwd=None):
+def _file_exists_at_ref(ref, path, cwd=None, known_resolvable=False):
     """Whether `path` exists in the tree at `ref`. None if this can't be
     determined (ref doesn't resolve, or the check itself errors/times out)
-    -- distinct from a confident "absent"."""
-    resolves = _ref_resolves(ref, cwd=cwd)
-    if resolves is not True:
-        return None
+    -- distinct from a confident "absent".
+
+    `known_resolvable=True` skips the `rev-parse --verify` guard call when
+    the caller already knows `ref` resolves (e.g. it came straight out of a
+    successful `git merge-base`) -- see Important 7 (timeout budget).
+    """
+    if not known_resolvable:
+        resolves = _ref_resolves(ref, cwd=cwd)
+        if resolves is not True:
+            return None
     proc = _run_git_raw(["cat-file", "-e", f"{ref}:{path}"], cwd=cwd)
     if proc is None:
         return None
     return proc.returncode == 0
 
 
-def _changelog_at_ref(ref, cwd=None):
+def _changelog_at_ref(ref, cwd=None, known_resolvable=False):
     """Return CHANGELOG.md's content at `ref`, or "" if absent there, or
     None if the git command itself failed (network, timeout, corrupt repo,
     etc.). This is the crux of Finding 3: `git show <ref>:CHANGELOG.md`
@@ -124,8 +113,12 @@ def _changelog_at_ref(ref, cwd=None):
     disambiguate by first asking git directly whether the path exists at
     that ref (`cat-file -e`); only once we know the file is genuinely
     absent do we treat a `show` miss as "".
+
+    `known_resolvable=True` (see _file_exists_at_ref) skips the redundant
+    resolvability check for a ref the caller already proved valid.
     """
-    exists = _file_exists_at_ref(ref, "CHANGELOG.md", cwd=cwd)
+    exists = _file_exists_at_ref(ref, "CHANGELOG.md", cwd=cwd,
+                                  known_resolvable=known_resolvable)
     if exists is None:
         return None
     if exists is False:
@@ -149,28 +142,55 @@ def changelog_gained_content(base, cwd=None):
     Compares HEAD (the committed state of the branch) against the merge
     base -- not the working tree -- so uncommitted edits cannot satisfy the
     gate for content that will not actually be in the PR.
+
+    `base` is tried as given first; if it does not resolve (a fresh clone
+    that only ever checked out the feature branch has no local `develop`,
+    only `origin/develop`), `origin/<base>` is tried as a fallback so the
+    gate still evaluates instead of permanently warning.
+
+    Kept to as few subprocess calls as the timeout budget allows (Important
+    7): the two `_changelog_at_ref` lookups below are told the ref is
+    already known-resolvable (`merge_base` came from a successful
+    `merge-base`; `HEAD` resolved implicitly by the same call), skipping a
+    redundant `rev-parse --verify` each would otherwise perform.
     """
     merge_base = run_git(["merge-base", "HEAD", base], cwd=cwd)
     if merge_base is None:
+        merge_base = run_git(["merge-base", "HEAD", f"origin/{base}"], cwd=cwd)
+    if merge_base is None:
         return None
-    before = _changelog_at_ref(merge_base, cwd=cwd)
+    before = _changelog_at_ref(merge_base, cwd=cwd, known_resolvable=True)
     if before is None:
         return None
-    after = _changelog_at_ref("HEAD", cwd=cwd)
+    after = _changelog_at_ref("HEAD", cwd=cwd, known_resolvable=True)
     if after is None:
         return None
     return _unreleased_body(after) != _unreleased_body(before)
 
 
+_CWD_FLAGS = {"-C", "--git-dir", "--work-tree"}
+
+
 def target_cwd(command, default):
-    """Resolve the directory a command actually operates on."""
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        return default
-    for i, token in enumerate(tokens):
-        if token == "-C" and i + 1 < len(tokens):
-            return tokens[i + 1]
-    if tokens and tokens[0] == "cd" and len(tokens) > 1:
-        return tokens[1]
+    """Resolve the directory a command actually operates on.
+
+    Root-cause fix: this used to be its own dumber scanner over the whole
+    token list, independent of actions.py's tokenizer -- so it and
+    actions.classify() disagreed about the same command string. It now
+    reuses actions._segments()/_global_flag_value(), which are already
+    positional-aware: a `-C`/`--git-dir`/`--work-tree` is only a cwd
+    override when it appears BEFORE the git subcommand. `git commit -C
+    HEAD~1` (commit's own "reuse this commit's message" flag) must resolve
+    to `default`, not to "HEAD~1" as a path.
+    """
+    for seg in _actions._segments(command):
+        if not seg:
+            continue
+        prog, rest = seg[0], seg[1:]
+        if prog == "cd" and rest:
+            return rest[0]
+        if prog == "git":
+            value = _actions._global_flag_value(rest, _CWD_FLAGS)
+            if value is not None:
+                return value
     return default
