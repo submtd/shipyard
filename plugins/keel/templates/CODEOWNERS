@@ -1,0 +1,9 @@
+# Every line is a file pattern followed by one or more owners.
+# Owners are notified and (with branch protection) required to review matching
+# changes. Replace the placeholder below with real GitHub usernames or teams.
+#
+# Example:
+#   *              @your-org/maintainers
+#   /docs/         @your-org/docs-team
+
+*  @REPLACE-WITH-OWNER
