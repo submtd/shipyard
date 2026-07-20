@@ -1,7 +1,10 @@
 """Load and validate .keel.json. Stdlib only; no subprocess."""
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 CONFIG_NAME = ".keel.json"
 
@@ -43,7 +46,7 @@ def _one_of(value, allowed, field):
     return value
 
 
-def load_config(repo_root):
+def load_config(repo_root: Path) -> Optional[Config]:
     path = Path(repo_root) / CONFIG_NAME
     if not path.is_file():
         return None
@@ -54,13 +57,33 @@ def load_config(repo_root):
     if not isinstance(raw, dict):
         raise ConfigError(f"{CONFIG_NAME} must contain a JSON object.")
 
-    branches = raw.get("branches") or {}
-    prefixes = raw.get("prefixes") or {}
-    strategy = raw.get("mergeStrategy") or {}
+    # Validate nested object fields
+    branches_raw = raw.get("branches")
+    if branches_raw is not None and not isinstance(branches_raw, dict):
+        raise ConfigError(f"{CONFIG_NAME}: 'branches' must be a JSON object (got {type(branches_raw).__name__}).")
+    branches = branches_raw or {}
+
+    prefixes_raw = raw.get("prefixes")
+    if prefixes_raw is not None and not isinstance(prefixes_raw, dict):
+        raise ConfigError(f"{CONFIG_NAME}: 'prefixes' must be a JSON object (got {type(prefixes_raw).__name__}).")
+    prefixes = prefixes_raw or {}
+
+    merge_strategy_raw = raw.get("mergeStrategy")
+    if merge_strategy_raw is not None and not isinstance(merge_strategy_raw, dict):
+        raise ConfigError(f"{CONFIG_NAME}: 'mergeStrategy' must be a JSON object (got {type(merge_strategy_raw).__name__}).")
+    strategy = merge_strategy_raw or {}
 
     topology = _one_of(raw.get("topology", "gitflow"), TOPOLOGIES, "topology")
     production = branches.get("production", "main")
     integration = production if topology == "trunk" else branches.get("integration", "develop")
+
+    # Validate requireChangelog if present
+    require_changelog_value = raw.get("requireChangelog", True)
+    if not isinstance(require_changelog_value, bool):
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'requireChangelog' must be a boolean "
+            f"(got {type(require_changelog_value).__name__})."
+        )
 
     return Config(
         topology=topology,
@@ -75,5 +98,5 @@ def load_config(repo_root):
             strategy.get("toIntegration", "squash"), STRATEGIES, "mergeStrategy.toIntegration"),
         merge_to_production=_one_of(
             strategy.get("toProduction", "merge"), STRATEGIES, "mergeStrategy.toProduction"),
-        require_changelog=bool(raw.get("requireChangelog", True)),
+        require_changelog=require_changelog_value,
     )

@@ -54,3 +54,28 @@ def test_unknown_enum_value_raises(tmp_path):
 def test_unknown_topology_raises(tmp_path):
     with pytest.raises(ConfigError):
         load_config(write(tmp_path, {"topology": "octopus"}))
+
+
+@pytest.mark.parametrize("field", ["branches", "prefixes", "mergeStrategy"])
+def test_non_object_nested_field_raises(tmp_path, field):
+    """Non-dict values for nested object fields must raise ConfigError."""
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {field: "main"}))
+    assert field in str(e.value)
+
+
+def test_non_boolean_require_changelog_raises(tmp_path):
+    """Non-boolean requireChangelog must raise ConfigError."""
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"requireChangelog": "false"}))
+    assert "requireChangelog" in str(e.value)
+
+
+def test_trunk_collapses_integration_even_with_explicit_value(tmp_path):
+    """Trunk topology must collapse integration to production, ignoring explicit branches.integration."""
+    cfg = load_config(write(tmp_path, {
+        "topology": "trunk",
+        "branches": {"integration": "dev", "production": "main"}
+    }))
+    assert cfg.integration == "main"
+    assert cfg.production == "main"
