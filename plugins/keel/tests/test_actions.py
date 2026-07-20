@@ -89,3 +89,21 @@ def test_pr_merge_unknown_strategy_is_none():
 ])
 def test_read_only_commands_classify_to_nothing(cmd):
     assert classify(cmd) == []
+
+
+@pytest.mark.parametrize("cmd,expected_number,expected_strategy", [
+    ("gh pr merge -m 5", "5", "merge"),
+    ("gh pr merge -r 5", "5", "rebase"),
+    ("gh pr merge -s 5", "5", "squash"),
+    ("gh pr merge -d -s 5", "5", "squash"),
+    ("gh pr merge --repo o/r -m 5", "5", "merge"),
+])
+def test_pr_merge_boolean_short_flags_do_not_consume_the_number(
+        cmd, expected_number, expected_strategy):
+    (a,) = classify(cmd)
+    assert (a.pr_number, a.strategy) == (expected_number, expected_strategy)
+
+
+def test_pr_create_with_short_value_flag_before_positional():
+    (a,) = classify("gh pr create -t 'some title' --base develop")
+    assert (a.kind, a.base) == ("pr-create", "develop")

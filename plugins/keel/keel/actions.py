@@ -12,11 +12,14 @@ from dataclasses import dataclass
 
 # Flags that consume the following token as their value. Used so that a flag
 # value is never mistaken for a positional argument.
-GH_VALUE_FLAGS = {
+GH_CREATE_VALUE_FLAGS = {
     "--base", "-B", "--head", "-H", "--repo", "-R", "--title", "-t",
     "--body", "-b", "--body-file", "-F", "--reviewer", "-r", "--assignee", "-a",
     "--label", "-l", "--milestone", "-m", "--project", "-p",
-    "--subject", "--match-head-commit",
+}
+GH_MERGE_VALUE_FLAGS = {
+    "--repo", "-R", "--body", "-b", "--body-file", "-F",
+    "--subject", "-t", "--match-head-commit", "--author-email",
 }
 GIT_VALUE_FLAGS = {
     "-C", "-c", "--git-dir", "--work-tree", "--namespace",
@@ -36,7 +39,7 @@ class PushRef:
 @dataclass(frozen=True)
 class Action:
     kind: str
-    refs: tuple = ()
+    refs: tuple[PushRef, ...] = ()
     base: str | None = None
     head: str | None = None
     pr_number: str | None = None
@@ -136,8 +139,11 @@ def _classify_segment(tokens):
         return None
 
     if prog == "gh":
-        pos = _positionals(args, GH_VALUE_FLAGS)
+        # First pass: detect subcommand without consuming values
+        pos = _positionals(args, set())
         if len(pos) >= 2 and pos[0] == "pr" and pos[1] == "create":
+            # Re-parse with create-specific value flags to get all positionals
+            pos = _positionals(args, GH_CREATE_VALUE_FLAGS)
             return Action(
                 kind="pr-create",
                 base=_flag_value(args, "--base", "-B"),
@@ -145,6 +151,8 @@ def _classify_segment(tokens):
                 repo=_flag_value(args, "--repo", "-R"),
             )
         if len(pos) >= 2 and pos[0] == "pr" and pos[1] == "merge":
+            # Re-parse with merge-specific value flags to get all positionals
+            pos = _positionals(args, GH_MERGE_VALUE_FLAGS)
             if "--squash" in args or "-s" in args:
                 strategy = "squash"
             elif "--merge" in args or "-m" in args:
