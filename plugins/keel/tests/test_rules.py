@@ -269,3 +269,12 @@ def test_base_branch_warn_and_capability_warn_both_surface():
     assert "base branch" in v.message
     assert "[capability]" in v.message
     assert "merge permission" in v.message
+
+
+def test_identical_secondary_messages_are_not_repeated():
+    # The review and merge-strategy rules both warn when the base is unknown;
+    # the user should see that cause once, not twice.
+    action = Action(kind="pr-merge", pr_number="5", strategy="squash")
+    v = evaluate(action, Facts(pr_base=None, capability=Tri.FALSE), cfg())
+    assert v.message.count("Could not determine the PR's base branch.") == 1
+    assert "merge permission" in v.message

@@ -249,8 +249,18 @@ def evaluate(action, facts, cfg):
     else:
         return ALLOW
 
-    if not rest:
-        return primary
+    # Several rules can independently report the same underlying cause (an
+    # unresolvable PR base warns from both the review and merge-strategy
+    # rules). Repeating identical text just makes the message harder to read.
+    seen = {primary.message}
+    extra = []
+    for verdict in rest:
+        if verdict.message in seen:
+            continue
+        seen.add(verdict.message)
+        extra.append(f"Also: [{verdict.rule}] {verdict.message}")
 
-    extra = " ".join(f"Also: [{v.rule}] {v.message}" for v in rest)
-    return Verdict(primary.decision, primary.rule, f"{primary.message} {extra}")
+    if not extra:
+        return primary
+    return Verdict(primary.decision, primary.rule,
+                   "{} {}".format(primary.message, " ".join(extra)))
