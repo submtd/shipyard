@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- CI `changelog` job that enforces keel's changelog rule server-side, built
+  on keel's own parser so the check and the in-editor hook cannot disagree.
+  Wired into `main`'s required status checks via branch protection.
+
 ### Changed
 
 - `keel`: under `trunk` topology, `pr-edge` now accepts any branch into
