@@ -30,11 +30,16 @@ before proceeding.
 
 ## 3. Protect the production branch
 
-Requires a PR, passing checks, and (usually) an approving review:
+Requires a PR, passing checks, and (usually) an approving review. Resolve
+`<count>` from the `reviewPolicy` table below before running this.
+
+Note `-F` (not `-f`) on the numeric and boolean fields: `-f` sends every value
+as a JSON string, so `-f ...count=1` would send `"1"` where GitHub expects an
+integer and the call would fail.
 
     gh api -X PUT repos/{owner}/{repo}/branches/<production>/protection \
       -H "Accept: application/vnd.github+json" \
-      -f "required_pull_request_reviews[required_approving_review_count]=1" \
+      -F "required_pull_request_reviews[required_approving_review_count]=<count>" \
       -F "enforce_admins=false" \
       -F "required_status_checks[strict]=true" \
       -f "required_status_checks[contexts][]=test" \

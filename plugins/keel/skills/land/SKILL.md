@@ -39,3 +39,7 @@ fine and typical.
 
 Say what merged, into what, and what the next step is - usually
 `keel:release` once enough has accumulated on `integration`.
+
+Under `trunk` there is no integration branch and no release branch, so there
+is nothing for `keel:release` to do: go straight to `keel:ship` when you are
+ready to cut a release.
