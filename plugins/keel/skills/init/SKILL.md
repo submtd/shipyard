@@ -15,8 +15,8 @@ Confirm you are at the repo root (`git rev-parse --show-toplevel`). Then detect:
 - Does a `develop` branch exist? `git show-ref --verify --quiet refs/heads/develop || git ls-remote --exit-code --heads origin develop` — either hit means yes.
 - Your permission: `gh repo view --json viewerPermission -q .viewerPermission` (may be empty outside a GitHub remote — that's fine).
 - Is this repo already keel-managed? Check whether `.keel.json` exists and loads:
-  `python3 -c "import sys; sys.path.insert(0,'PLUGIN/plugins/keel'); from keel.config import load_config; from pathlib import Path; print(load_config(Path('.')))"`
-  (replace `PLUGIN` with `${CLAUDE_PLUGIN_ROOT}`'s parent as needed; the package is at `${CLAUDE_PLUGIN_ROOT}/keel`).
+  `python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from keel.config import load_config; from pathlib import Path; print(load_config(Path('.')))"`
+  (`${CLAUDE_PLUGIN_ROOT}` is this plugin's root directory; the `keel` package sits at its top level.)
 
 **If `.keel.json` already loads, switch to top-up mode (section 6).**
 
