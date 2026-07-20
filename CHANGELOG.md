@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `plugin.json` no longer double-registers `hooks/hooks.json`, which Claude
+  Code auto-loads by convention; the redundant reference failed on install
+  with a duplicate-hooks error.
+
 ### Added
 
 - `keel`, the first Shipyard plugin: a rule engine that models a project's
