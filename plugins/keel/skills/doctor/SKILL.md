@@ -48,14 +48,17 @@ worth fixing, but not why the command stopped. What each name means:
 - **`pr-edge`** - the PR's head and base are not a valid pair for this
   topology. Under gitflow: feature -> integration, release -> production,
   hotfix -> production, and production -> integration (the back-merge). Under
-  `trunk`: only feature/hotfix -> production - there is no release branch.
+  `trunk`: any branch -> production - trunk-based development is not
+  prefix-strict, so `feature/*`/`hotfix/*` are not required; the only
+  rejected trunk edge is the production/integration branch targeting itself.
 
 - **`changelog`** - the `Unreleased` section of `CHANGELOG.md` did not gain
   content on this branch. This is checked against the *committed* state
   (`HEAD`), not the working tree or the index - an edit that's only staged or
-  only on disk does not count, it has to be part of a commit. Release and
-  back-merge PRs are exempt; they carry no new user-facing change of their
-  own.
+  only on disk does not count, it has to be part of a commit. Under gitflow,
+  release and back-merge PRs are exempt; they carry no new user-facing change
+  of their own. Under trunk, this applies to every work branch (any branch is
+  a valid one there), except release branches and the trunk branch itself.
 
 - **`merge-strategy`** - the PR was merged with the wrong flag for its base.
   Read `mergeStrategy` in `.keel.json`: whatever is configured for
