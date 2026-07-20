@@ -36,16 +36,20 @@ def _protected(cfg):
 def _kind_of_branch(name, cfg):
     if name is None:
         return None
+    # Exact names are checked before prefixes: a production/integration branch
+    # name that happens to also match a configured prefix (e.g.
+    # production="main-line", feature_prefix="main-") must still classify as
+    # production/integration, not feature/release/hotfix.
+    if name == cfg.production:
+        return "production"
+    if name == cfg.integration:
+        return "integration"
     if name.startswith(cfg.feature_prefix):
         return "feature"
     if name.startswith(cfg.release_prefix):
         return "release"
     if name.startswith(cfg.hotfix_prefix):
         return "hotfix"
-    if name == cfg.production:
-        return "production"
-    if name == cfg.integration:
-        return "integration"
     return "other"
 
 
@@ -120,6 +124,10 @@ def _rule_changelog(action, facts, cfg):
     if not cfg.require_changelog:
         return ALLOW
     head_kind = _kind_of_branch(action.head or facts.branch, cfg)
+    if head_kind is None:
+        return _warn("changelog",
+                     "Could not determine the head branch's kind, so the "
+                     "CHANGELOG check was skipped.")
     # Release and back-merge PRs carry no new user-facing change of their own.
     if head_kind not in ("feature", "hotfix"):
         return ALLOW
@@ -141,6 +149,11 @@ def _rule_changelog(action, facts, cfg):
 def _rule_merge_strategy(action, facts, cfg):
     if facts.pr_base is None:
         return _warn("merge-strategy", "Could not determine the PR's base branch.")
+    # The `and not cfg.is_trunk` guard here relies on an invariant established
+    # in config.load_config: under trunk topology, `integration` is always
+    # normalized to equal `production`. A directly-constructed Config with
+    # topology="trunk" and integration != production would bypass this
+    # branch's merge-strategy enforcement silently.
     if facts.pr_base == cfg.integration and not cfg.is_trunk:
         expected = cfg.merge_to_integration
     elif facts.pr_base == cfg.production:
@@ -149,7 +162,7 @@ def _rule_merge_strategy(action, facts, cfg):
         return ALLOW
     if action.strategy is None:
         return _warn("merge-strategy",
-                     f"No merge strategy given; '{cfg.production}' expects "
+                     f"No merge strategy given; '{facts.pr_base}' expects "
                      f"--{expected}.")
     if action.strategy != expected:
         return _block("merge-strategy",
@@ -188,6 +201,12 @@ def _rule_review(action, facts, cfg):
 # --- Rule 6: capability ---------------------------------------------------
 
 def _rule_capability(action, facts, cfg):
+    # Deliberate divergence from the other rules: Tri.UNKNOWN here maps to
+    # ALLOW rather than warn. facts.capability defaults to UNKNOWN, so this
+    # is the common case on every call -- warning on it would be constant
+    # noise for a best-effort heads-up that never gates anything. "allow"
+    # still satisfies the binding policy (UNKNOWN must never block). Do not
+    # "fix" this to warn.
     if facts.capability is Tri.FALSE:
         return _warn("capability",
                      "You may not have merge permission on this repository; "
@@ -195,21 +214,43 @@ def _rule_capability(action, facts, cfg):
     return ALLOW
 
 
+# NOTE: tuple order is load-bearing. When multiple rules for an action.kind
+# produce a finding, the FIRST one (in this order) supplies the primary
+# decision/rule/message; the rest are appended to the message as secondary
+# findings (see evaluate()). Order rules so the most fundamental gate for
+# that action comes first.
 RULES = {
     "commit": (_rule_protected_write,),
     "push": (_rule_protected_write,),
     "pr-create": (_rule_pr_edge, _rule_changelog),
-    "pr-merge": (_rule_merge_strategy, _rule_review, _rule_capability),
+    "pr-merge": (_rule_review, _rule_merge_strategy, _rule_capability),
 }
 
 
 def evaluate(action, facts, cfg):
-    """Return the most severe verdict across the rules for this action."""
-    worst = ALLOW
-    for rule in RULES.get(action.kind, ()):
-        verdict = rule(action, facts, cfg)
-        if verdict.decision == "block":
-            return verdict
-        if verdict.decision == "warn" and worst.decision == "allow":
-            worst = verdict
-    return worst
+    """Return the most severe verdict across the rules for this action.
+
+    Every rule for action.kind is evaluated -- none are skipped once a block
+    or warn is found. The most severe decision wins (block > warn > allow);
+    among verdicts of that severity, the first one in RULES order supplies
+    the primary decision/rule/message. Any additional block or warn verdicts
+    are appended to the message as "Also: [rule] message" so they are not
+    silently dropped.
+    """
+    verdicts = [rule(action, facts, cfg) for rule in RULES.get(action.kind, ())]
+
+    blocks = [v for v in verdicts if v.decision == "block"]
+    warns = [v for v in verdicts if v.decision == "warn"]
+
+    if blocks:
+        primary, rest = blocks[0], blocks[1:] + warns
+    elif warns:
+        primary, rest = warns[0], warns[1:]
+    else:
+        return ALLOW
+
+    if not rest:
+        return primary
+
+    extra = " ".join(f"Also: [{v.rule}] {v.message}" for v in rest)
+    return Verdict(primary.decision, primary.rule, f"{primary.message} {extra}")

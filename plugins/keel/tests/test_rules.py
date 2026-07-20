@@ -2,7 +2,7 @@ import pytest
 from keel.actions import Action, PushRef
 from keel.config import Config
 from keel.facts import Facts, Tri
-from keel.rules import evaluate, Verdict
+from keel.rules import evaluate, Verdict, _kind_of_branch, _rule_changelog
 
 
 def cfg(**over):
@@ -90,6 +90,16 @@ def test_invalid_edges_block(head, base):
     assert v.rule == "pr-edge"
 
 
+def test_kind_of_branch_exact_name_wins_over_prefix_collision():
+    # Regression: prefixes were tested before exact names, so a production
+    # branch whose name happened to also match a configured prefix (e.g.
+    # production="main-line", feature_prefix="main-") classified as
+    # "feature" and never reached the exact-match checks.
+    c = cfg(production="main-line", feature_prefix="main-")
+    assert _kind_of_branch("main-line", c) == "production"
+    assert _kind_of_branch("main-thing", c) == "feature"
+
+
 def test_trunk_topology_allows_feature_into_production():
     action = Action(kind="pr-create", base="main", head="feature/x")
     facts = Facts(branch="feature/x", changelog_ok=Tri.TRUE)
@@ -124,6 +134,17 @@ def test_unknown_changelog_warns():
     assert v.decision == "warn"
 
 
+def test_changelog_gate_warns_when_head_kind_unresolvable():
+    # Regression: when action.head and facts.branch are both None,
+    # _kind_of_branch returns None, which used to fall through the
+    # "not in (feature, hotfix)" guard and silently ALLOW -- despite
+    # require_changelog=True and total ignorance of the PR's kind.
+    action = Action(kind="pr-create", base="develop", head=None)
+    v = _rule_changelog(action, Facts(branch=None, changelog_ok=Tri.TRUE), cfg())
+    assert v.decision == "warn"
+    assert v.rule == "changelog"
+
+
 def test_changelog_gate_disabled_by_config():
     action = Action(kind="pr-create", base="develop", head="feature/x")
     c = cfg(require_changelog=False)
@@ -150,6 +171,18 @@ def test_merge_commit_into_production_allows():
     action = Action(kind="pr-merge", pr_number="5", strategy="merge")
     facts = Facts(pr_base="main", pr_head="release/1.2.0")
     assert evaluate(action, facts, cfg()).decision == "allow"
+
+
+def test_no_strategy_warn_names_the_actual_base_branch():
+    # Regression: the "no strategy given" warn hardcoded cfg.production
+    # regardless of the actual PR base, so merging into develop with no
+    # --strategy flag produced a message naming 'main' instead of 'develop'.
+    action = Action(kind="pr-merge", pr_number="5")
+    facts = Facts(pr_base="develop", pr_head="feature/x", pr_review_state="APPROVED")
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "warn"
+    assert "'develop'" in v.message
+    assert "'main'" not in v.message
 
 
 # --- Rule 5: review policy -----------------------------------------------
@@ -205,3 +238,34 @@ def test_missing_capability_warns_never_blocks():
     facts = Facts(pr_base="develop", pr_head="feature/x",
                   pr_review_state="APPROVED", capability=Tri.FALSE)
     assert evaluate(action, facts, cfg()).decision == "warn"
+
+
+# --- evaluate(): block/warn masking across multiple rules -----------------
+
+def test_review_block_and_merge_strategy_block_both_surface():
+    # Regression: evaluate() returned on the FIRST block, so a develop-bound
+    # PR with strategy="merge" AND CHANGES_REQUESTED reported only the
+    # merge-strategy block; the outstanding requested-changes review -- the
+    # more fundamental gate -- was invisible.
+    action = Action(kind="pr-merge", pr_number="5", strategy="merge")
+    facts = Facts(pr_base="develop", pr_head="feature/x",
+                  pr_review_state="CHANGES_REQUESTED")
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "block"
+    assert v.rule == "review"
+    assert "requested changes" in v.message
+    assert "[merge-strategy]" in v.message
+    assert "squash" in v.message
+
+
+def test_base_branch_warn_and_capability_warn_both_surface():
+    # Regression: evaluate() kept only the FIRST warn, so pr_base=None with
+    # capability=Tri.FALSE reported only the base-branch warn; the
+    # capability warning was silently dropped.
+    action = Action(kind="pr-merge", pr_number="5", strategy="squash")
+    facts = Facts(pr_base=None, capability=Tri.FALSE)
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "warn"
+    assert "base branch" in v.message
+    assert "[capability]" in v.message
+    assert "merge permission" in v.message
