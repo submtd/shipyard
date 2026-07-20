@@ -107,3 +107,14 @@ def test_pr_merge_boolean_short_flags_do_not_consume_the_number(
 def test_pr_create_with_short_value_flag_before_positional():
     (a,) = classify("gh pr create -t 'some title' --base develop")
     assert (a.kind, a.base) == ("pr-create", "develop")
+
+
+@pytest.mark.parametrize("cmd,kind,number,base", [
+    ("gh -R owner/repo pr merge 5", "pr-merge", "5", None),
+    ("gh --repo owner/repo pr merge --squash 5", "pr-merge", "5", None),
+    ("gh --repo owner/repo pr create --title x --base develop", "pr-create", None, "develop"),
+    ("gh -R owner/repo pr create --base develop", "pr-create", None, "develop"),
+])
+def test_global_flags_before_subcommand_still_classify(cmd, kind, number, base):
+    (a,) = classify(cmd)
+    assert (a.kind, a.pr_number, a.base) == (kind, number, base)

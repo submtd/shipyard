@@ -21,6 +21,7 @@ GH_MERGE_VALUE_FLAGS = {
     "--repo", "-R", "--body", "-b", "--body-file", "-F",
     "--subject", "-t", "--match-head-commit", "--author-email",
 }
+GH_ANY_VALUE_FLAGS = GH_CREATE_VALUE_FLAGS | GH_MERGE_VALUE_FLAGS
 GIT_VALUE_FLAGS = {
     "-C", "-c", "--git-dir", "--work-tree", "--namespace",
     "--exec-path", "--super-prefix", "--config-env",
@@ -139,8 +140,8 @@ def _classify_segment(tokens):
         return None
 
     if prog == "gh":
-        # First pass: detect subcommand without consuming values
-        pos = _positionals(args, set())
+        # First pass: detect subcommand using union of value flags
+        pos = _positionals(args, GH_ANY_VALUE_FLAGS)
         if len(pos) >= 2 and pos[0] == "pr" and pos[1] == "create":
             # Re-parse with create-specific value flags to get all positionals
             pos = _positionals(args, GH_CREATE_VALUE_FLAGS)
