@@ -48,6 +48,13 @@ def unreleased_body(text):
     return "\n".join(b for b in body if b.strip())
 
 
+def _str_or(value, default):
+    """Return value if it is a non-empty str, otherwise default. Guards against
+    wrong-typed config values (e.g. a prefix given as a number) flowing through
+    into string operations like .startswith()."""
+    return value if isinstance(value, str) and value else default
+
+
 def load_cfg(root):
     """Minimal, tolerant .keel.json read. Returns a flat dict of the fields the
     gate needs, with defaults. Never raises on a bad file -- CI should not crash
@@ -63,16 +70,16 @@ def load_cfg(root):
         raw = {}
     branches = raw.get("branches") if isinstance(raw.get("branches"), dict) else {}
     prefixes = raw.get("prefixes") if isinstance(raw.get("prefixes"), dict) else {}
-    topology = raw.get("topology", "gitflow")
-    production = branches.get("production", "main")
-    integration = production if topology == "trunk" else branches.get("integration", "develop")
+    topology = _str_or(raw.get("topology"), "gitflow")
+    production = _str_or(branches.get("production"), "main")
+    integration = production if topology == "trunk" else _str_or(branches.get("integration"), "develop")
     return {
         "topology": topology,
         "production": production,
         "integration": integration,
-        "feature_prefix": prefixes.get("feature", "feature/"),
-        "release_prefix": prefixes.get("release", "release/"),
-        "hotfix_prefix": prefixes.get("hotfix", "hotfix/"),
+        "feature_prefix": _str_or(prefixes.get("feature"), "feature/"),
+        "release_prefix": _str_or(prefixes.get("release"), "release/"),
+        "hotfix_prefix": _str_or(prefixes.get("hotfix"), "hotfix/"),
         "require_changelog": bool(raw.get("requireChangelog", True)),
     }
 
@@ -116,9 +123,18 @@ def main(argv):
               "requireChangelog: false in .keel.json")
         return 1
 
-    before = _run_git(["show", f"origin/{base}:CHANGELOG.md"])
+    merge_base = _run_git(["merge-base", f"origin/{base}", "HEAD"])
+    if merge_base is None:
+        merge_base = _run_git(["merge-base", base, "HEAD"])
+    if merge_base is None:
+        print(f"::warning::could not determine the merge base with {base}; "
+              "skipping (unknown is not a violation)")
+        return 0
+    merge_base = merge_base.strip()
+
+    before = _run_git(["show", f"{merge_base}:CHANGELOG.md"])
     if before is None:
-        print(f"::warning::could not read CHANGELOG.md at origin/{base}; "
+        print(f"::warning::could not read CHANGELOG.md at {merge_base}; "
               "skipping (unknown is not a violation)")
         return 0
     if unreleased_body(here.read_text()) != unreleased_body(before):
