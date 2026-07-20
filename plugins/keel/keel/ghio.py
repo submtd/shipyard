@@ -10,6 +10,11 @@ from .facts import Tri
 
 GH_TIMEOUT = 8.0
 
+# The cache lives only as long as the process. keel's hooks are one-shot -- a
+# fresh interpreter per tool call that exits immediately -- so this deduplicates
+# lookups within a single evaluation and then dies. That is also why caching a
+# failed lookup is safe: a transient gh blip cannot outlive the hook run.
+
 _PR_FIELDS = "baseRefName,headRefName,isCrossRepository,reviewDecision,reviews"
 _cache = {}
 
@@ -90,13 +95,10 @@ def capability(cwd=None):
     # not valid JSON, so json.loads would always fail and this path would
     # silently never work. Ask for the object and read the field ourselves.
     data = _gh_json(["repo", "view", "--json", "viewerPermission"], cwd=cwd)
-    if isinstance(data, dict) and "viewerPermission" in data:
-        perm = data.get("viewerPermission")
-        result = Tri.of(perm in ("ADMIN", "MAINTAIN", "WRITE")) if perm else Tri.UNKNOWN
-    elif isinstance(data, dict):
-        # `gh api repos/{owner}/{repo}` shape: a permissions object.
-        result = Tri.of(bool(data.get("push") or data.get("maintain")
-                             or data.get("admin")))
+    # `--json viewerPermission` restricts the payload to exactly that field, so
+    # this is the only shape gh can return. Anything else means the call failed.
+    if isinstance(data, dict) and data.get("viewerPermission"):
+        result = Tri.of(data["viewerPermission"] in ("ADMIN", "MAINTAIN", "WRITE"))
     else:
         result = Tri.UNKNOWN
     _cache[key] = result

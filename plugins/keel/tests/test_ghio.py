@@ -106,16 +106,18 @@ def test_capability_never_requests_raw_jq_output(monkeypatch):
     assert "-q" not in seen[0], "capability() must parse JSON, not jq output"
 
 
-def test_capability_from_permissions_object(monkeypatch):
-    monkeypatch.setattr(ghio.subprocess, "run", lambda args, **kw: FakeProc(
-        json.dumps({"push": True, "maintain": False, "admin": False})))
-    assert ghio.capability() is Tri.TRUE
+def test_capability_unknown_when_field_absent(monkeypatch):
+    # `--json viewerPermission` can only return that field, so any other shape
+    # means the call did not give us an answer. Unknown, not a guess.
+    monkeypatch.setattr(ghio.subprocess, "run",
+                        lambda args, **kw: FakeProc(json.dumps({})))
+    assert ghio.capability() is Tri.UNKNOWN
 
 
-def test_capability_false(monkeypatch):
+def test_capability_unknown_when_field_is_null(monkeypatch):
     monkeypatch.setattr(ghio.subprocess, "run", lambda args, **kw: FakeProc(
-        json.dumps({"push": False, "maintain": False, "admin": False})))
-    assert ghio.capability() is Tri.FALSE
+        json.dumps({"viewerPermission": None})))
+    assert ghio.capability() is Tri.UNKNOWN
 
 
 def test_capability_unknown_on_failure(monkeypatch):
