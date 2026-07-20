@@ -4,6 +4,5 @@
   "version": "0.1.0",
   "description": "Guides a project's git lifecycle: start work, land it, ship it.",
   "license": "MIT",
-  "keywords": ["git", "workflow", "release", "changelog"],
-  "hooks": "./hooks/hooks.json"
+  "keywords": ["git", "workflow", "release", "changelog"]
 }
