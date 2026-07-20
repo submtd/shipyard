@@ -1,0 +1,7 @@
+{
+  "topology": "trunk",
+  "branches": { "production": "main" },
+  "contributions": "both",
+  "reviewPolicy": "review",
+  "requireChangelog": true
+}
