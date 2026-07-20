@@ -191,9 +191,17 @@ def _rule_review(action, facts, cfg):
         return ALLOW
     if facts.pr_base is None:
         return _warn("review", "Could not determine the PR's base branch.")
-    # Releases and back-merges carry already-reviewed content.
+    # Releases and back-merges carry already-reviewed content -- but only
+    # when the PR is actually same-repo. A fork contributor's branch can be
+    # named anything, including "main" or "release/x": _kind_of_branch()
+    # only looks at the branch NAME, so without this guard a fork head
+    # named "main" would read as head_kind == "production" and skip review
+    # entirely (Important 4). `is not Tri.TRUE` means Tri.UNKNOWN takes the
+    # same path as a known Tri.FALSE (same-repo) here -- per the fail
+    # policy, UNKNOWN must never produce a block a known-FALSE would not,
+    # and a known-FALSE already takes this exemption branch.
     head_kind = _kind_of_branch(facts.pr_head, cfg)
-    if head_kind in ("release", "production"):
+    if head_kind in ("release", "production") and facts.pr_is_fork is not Tri.TRUE:
         return ALLOW
     accepted = ("APPROVED",) if cfg.review_policy == "approval" else ("APPROVED", "COMMENTED")
     if facts.pr_review_state is None:

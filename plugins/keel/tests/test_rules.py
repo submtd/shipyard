@@ -263,6 +263,52 @@ def test_unknown_pr_base_warns():
     assert evaluate(action, Facts(pr_base=None), cfg()).decision == "warn"
 
 
+def test_fork_pr_with_head_named_main_still_requires_review():
+    # Important 4: a fork contributor's branch named 'main' collides with
+    # the production branch name, so _kind_of_branch(pr_head) alone would
+    # read as "production" and skip review entirely. The exemption must be
+    # gated on this actually being a same-repo PR.
+    action = Action(kind="pr-merge", pr_number="5", strategy="merge")
+    facts = Facts(pr_base="develop", pr_head="main",
+                  pr_is_fork=Tri.TRUE, pr_review_state=None)
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "block"
+    assert v.rule == "review"
+
+
+def test_fork_pr_with_head_named_release_still_requires_review():
+    action = Action(kind="pr-merge", pr_number="5", strategy="merge")
+    facts = Facts(pr_base="main", pr_head="release/1.0",
+                  pr_is_fork=Tri.TRUE, pr_review_state=None)
+    v = evaluate(action, facts, cfg())
+    assert v.decision == "block"
+    assert v.rule == "review"
+
+
+def test_same_repo_back_merge_main_to_develop_still_exempt():
+    action = Action(kind="pr-merge", pr_number="5", strategy="squash")
+    facts = Facts(pr_base="develop", pr_head="main",
+                  pr_is_fork=Tri.FALSE, pr_review_state=None)
+    assert evaluate(action, facts, cfg()).decision == "allow"
+
+
+def test_same_repo_release_pr_still_exempt():
+    action = Action(kind="pr-merge", pr_number="5", strategy="merge")
+    facts = Facts(pr_base="main", pr_head="release/1.0",
+                  pr_is_fork=Tri.FALSE, pr_review_state=None)
+    assert evaluate(action, facts, cfg()).decision == "allow"
+
+
+def test_unknown_fork_status_does_not_block_beyond_known_false():
+    # Fail policy: Tri.UNKNOWN must never produce a block a known-FALSE
+    # would not. A known-FALSE (same repo) with head 'main' is exempt, so
+    # UNKNOWN must be exempt too, not a fresh source of blocking.
+    action = Action(kind="pr-merge", pr_number="5", strategy="squash")
+    facts = Facts(pr_base="develop", pr_head="main",
+                  pr_is_fork=Tri.UNKNOWN, pr_review_state=None)
+    assert evaluate(action, facts, cfg()).decision == "allow"
+
+
 # --- Rule 6: capability ---------------------------------------------------
 
 def test_missing_capability_warns_never_blocks():
