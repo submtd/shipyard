@@ -5,6 +5,88 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Repo-level `tests/` (wired in through `.ballast.json`, so `ballast`
+  renders the runner config for it like any other suite) covering what no
+  single plugin owns: every `marketplace.json` entry points at a real
+  plugin directory, every plugin directory is registered, names agree with
+  the `plugin.json` they point at, and each `plugin.json` version matches
+  its package `__version__`. Previously each plugin only asserted that
+  *it* was listed, so a marketplace entry with no directory shipped green.
+- `keel`'s smoke test now covers what its five juniors already did --
+  `plugin.json`, marketplace registration, frontmatter for all eleven
+  skills, module importability -- plus the two things only `keel` has:
+  `hooks.json` wiring, and a check that `orient.py`'s advertised skill
+  list matches the skills actually on disk. It was three lines asserting
+  only `__version__`, on the oldest and most-installed plugin in the
+  suite.
+- `test_purity.py` in all six plugins now asserts that its hand-maintained
+  `PURE_MODULES` list covers every module in the package. A new module was
+  previously guarded by nobody -- adding one that imports `subprocess`
+  passed purity silently in all six.
+- `bosun`'s `propose_config` key order is now pinned. `build_plan` and
+  `render` were both order-defended, but the function that writes the
+  *other* committed artifact (`.bosun.json`) was stable only by accident:
+  every assertion compared dicts with `==`, which ignores key order.
+- `hull:init` now tells the user to run a one-time `gitleaks detect` over
+  existing history at adoption. The rendered workflow scans the event's
+  commit range, so the run triggered by the commit that adds
+  `security.yml` scans only that commit -- a repo with a secret committed
+  last year gets a green check and has never been scanned.
+
+### Changed
+
+- All six plugins now reject unknown keys in their config files instead of
+  silently ignoring them, naming the offending key and listing what is
+  allowed. This applies to nested objects too (`keel`'s `branches`,
+  `prefixes` and `mergeStrategy`; per-stack and per-ecosystem objects
+  elsewhere). Previously a one-character typo was invisible: `versinos`
+  reverted `rigging`'s whole CI matrix to the registry default, `intrval`
+  silently gave `bosun` weekly when the user asked for daily, and a
+  `permissions` key in `.hull.json` looked like it configured the
+  workflow's token scope while doing nothing. `stow` stack values take no
+  options at all, so any key inside one is now an error rather than a
+  pretence.
+
+  This is a behaviour change for any config that currently carries an
+  unrecognised key -- such a file now fails to load rather than loading
+  with that key dropped. The message names the key, and the fix is to
+  remove or correct it. Note the CI changelog gate keeps its own
+  deliberately tolerant reader: CI must not crash on config.
+- `keel` now passes an explicit `--repo`/`-R` through to `gh`.
+  `Action.repo` was parsed, stored, asserted in a test, and then read by
+  nothing, so `gh pr merge 5 --repo other/org-repo` was judged against the
+  *local* checkout's PR #5 -- a different pull request, with a different
+  base and review state. The review and merge-strategy gates therefore
+  returned a confidently wrong verdict rather than an honest unknown. The
+  repository is now part of the fact cache key too, so one repo's answer
+  can't be served for another.
+- `keel`'s skills now load the config through `keel.config.load_config`
+  instead of reading `.keel.json` directly. `keel:init` writes only the
+  keys it detects, so `prefixes` and `mergeStrategy` are normally absent
+  from the file -- `start-work`, `land`, `sync` and `release` were telling
+  Claude to read fields that aren't there, leaving it to guess, and a guess
+  that disagrees with the loader's defaults produces a `merge-strategy` or
+  `pr-edge` block nobody can explain.
+- Every GitHub Actions ref is now pinned to a full commit SHA with a
+  trailing `# v4`-style comment, replacing the floating major-version tags
+  (`actions/checkout@v4`, `gitleaks/gitleaks-action@v2`, …). A major tag is
+  repointable at will by the action's owner, so it was never a pin -- yet
+  README, CHANGELOG and hull's own design spec all called it one, and
+  hull's `test_gitleaks_action_ref_is_pinned` accepted it. That mattered
+  most in `hull`, the plugin whose entire job is supply-chain security, and
+  in `gitleaks-action`, which runs with `GITHUB_TOKEN` in its environment.
+  Covers the three workflows, the `keel:init` template, and the `rigging`
+  and `hull` registries that generate them for downstream repos. The
+  documentation's claim is now true rather than aspirational, and
+  `bosun`'s `github-actions` Dependabot entry keeps the pins current.
+- `keel`: under `trunk` topology, `pr-edge` now accepts any branch into
+  production, not only `feature/*` and `hotfix/*` -- trunk-based development
+  is not prefix-strict the way gitflow is. The `changelog` gate still applies
+  to all trunk work branches (previously it only applied to `feature/*`/
+  `hotfix/*`, silently exempting anything else).
+
 ### Fixed
 
 - `stow` no longer risks emptying a repo's `.gitignore`. The write went
@@ -84,103 +166,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`708 tests`, `four plugin test dirs`) that a following agent would
   compare against and report a false failure. It now checks the invariant:
   every configured `testPaths` entry exists and collection is non-empty.
-### Changed
-
-- All six plugins now reject unknown keys in their config files instead of
-  silently ignoring them, naming the offending key and listing what is
-  allowed. This applies to nested objects too (`keel`'s `branches`,
-  `prefixes` and `mergeStrategy`; per-stack and per-ecosystem objects
-  elsewhere). Previously a one-character typo was invisible: `versinos`
-  reverted `rigging`'s whole CI matrix to the registry default, `intrval`
-  silently gave `bosun` weekly when the user asked for daily, and a
-  `permissions` key in `.hull.json` looked like it configured the
-  workflow's token scope while doing nothing. `stow` stack values take no
-  options at all, so any key inside one is now an error rather than a
-  pretence.
-
-  This is a behaviour change for any config that currently carries an
-  unrecognised key -- such a file now fails to load rather than loading
-  with that key dropped. The message names the key, and the fix is to
-  remove or correct it. Note the CI changelog gate keeps its own
-  deliberately tolerant reader: CI must not crash on config.
-- `keel` now passes an explicit `--repo`/`-R` through to `gh`.
-  `Action.repo` was parsed, stored, asserted in a test, and then read by
-  nothing, so `gh pr merge 5 --repo other/org-repo` was judged against the
-  *local* checkout's PR #5 -- a different pull request, with a different
-  base and review state. The review and merge-strategy gates therefore
-  returned a confidently wrong verdict rather than an honest unknown. The
-  repository is now part of the fact cache key too, so one repo's answer
-  can't be served for another.
-- `keel`'s skills now load the config through `keel.config.load_config`
-  instead of reading `.keel.json` directly. `keel:init` writes only the
-  keys it detects, so `prefixes` and `mergeStrategy` are normally absent
-  from the file -- `start-work`, `land`, `sync` and `release` were telling
-  Claude to read fields that aren't there, leaving it to guess, and a guess
-  that disagrees with the loader's defaults produces a `merge-strategy` or
-  `pr-edge` block nobody can explain.
-### Changed
-
-- Every GitHub Actions ref is now pinned to a full commit SHA with a
-  trailing `# v4`-style comment, replacing the floating major-version tags
-  (`actions/checkout@v4`, `gitleaks/gitleaks-action@v2`, …). A major tag is
-  repointable at will by the action's owner, so it was never a pin -- yet
-  README, CHANGELOG and hull's own design spec all called it one, and
-  hull's `test_gitleaks_action_ref_is_pinned` accepted it. That mattered
-  most in `hull`, the plugin whose entire job is supply-chain security, and
-  in `gitleaks-action`, which runs with `GITHUB_TOKEN` in its environment.
-  Covers the three workflows, the `keel:init` template, and the `rigging`
-  and `hull` registries that generate them for downstream repos. The
-  documentation's claim is now true rather than aspirational, and
-  `bosun`'s `github-actions` Dependabot entry keeps the pins current.
-
-### Fixed
-
 - `rigging` and `hull` renderers now emit `Step.name`, which both declared
   and neither rendered -- a registry entry written as `Step(name=...)`
   silently lost it, with no error and no test. Duplicated latent bug,
   present in both because the renderer was copy-pasted before either used
   the field.
-
-### Added
-
-- Repo-level `tests/` (wired in through `.ballast.json`, so `ballast`
-  renders the runner config for it like any other suite) covering what no
-  single plugin owns: every `marketplace.json` entry points at a real
-  plugin directory, every plugin directory is registered, names agree with
-  the `plugin.json` they point at, and each `plugin.json` version matches
-  its package `__version__`. Previously each plugin only asserted that
-  *it* was listed, so a marketplace entry with no directory shipped green.
-- `keel`'s smoke test now covers what its five juniors already did --
-  `plugin.json`, marketplace registration, frontmatter for all eleven
-  skills, module importability -- plus the two things only `keel` has:
-  `hooks.json` wiring, and a check that `orient.py`'s advertised skill
-  list matches the skills actually on disk. It was three lines asserting
-  only `__version__`, on the oldest and most-installed plugin in the
-  suite.
-- `test_purity.py` in all six plugins now asserts that its hand-maintained
-  `PURE_MODULES` list covers every module in the package. A new module was
-  previously guarded by nobody -- adding one that imports `subprocess`
-  passed purity silently in all six.
-- `bosun`'s `propose_config` key order is now pinned. `build_plan` and
-  `render` were both order-defended, but the function that writes the
-  *other* committed artifact (`.bosun.json`) was stable only by accident:
-  every assertion compared dicts with `==`, which ignores key order.
-- `hull:init` now tells the user to run a one-time `gitleaks detect` over
-  existing history at adoption. The rendered workflow scans the event's
-  commit range, so the run triggered by the commit that adds
-  `security.yml` scans only that commit -- a repo with a secret committed
-  last year gets a green check and has never been scanned.
-
-### Changed
-
-- `keel`: under `trunk` topology, `pr-edge` now accepts any branch into
-  production, not only `feature/*` and `hotfix/*` -- trunk-based development
-  is not prefix-strict the way gitflow is. The `changelog` gate still applies
-  to all trunk work branches (previously it only applied to `feature/*`/
-  `hotfix/*`, silently exempting anything else).
-
-### Fixed
-
 - `.gitattributes` now normalizes line endings repo-wide (`* text=auto
   eol=lf`). Five of the six plugin suites compare committed files
   byte-for-byte, but only `ballast`'s artifacts were covered, so a Windows
