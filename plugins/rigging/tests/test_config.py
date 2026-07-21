@@ -137,3 +137,31 @@ def test_valid_name_and_version_still_load(tmp_path):
     }))
     assert cfg.name == "ci"
     assert cfg.stacks == {"python": ("3.9",)}
+
+
+# --- unknown keys ----------------------------------------------------------
+#
+# Silently dropping an unrecognised key is how a one-character typo becomes
+# an invisible behaviour change: "versinos" reverted the whole CI matrix to
+# the registry default, and the user's rendered workflow tested a Python
+# version they never asked for. `triggers` is worse -- the spec deliberately
+# does not support it, so a user who adds it got silence rather than an
+# answer.
+
+
+def test_unknown_top_level_key_raises_naming_it(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {}}, "triggers": {"branches": ["main"]}}))
+    assert "triggers" in str(e.value)
+
+
+def test_unknown_per_stack_key_raises_naming_it(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {"versinos": ["3.9"]}}}))
+    assert "versinos" in str(e.value)
+
+
+def test_known_keys_together_still_load(tmp_path):
+    cfg = load_config(write(tmp_path, {"name": "ci", "stacks": {"python": {"versions": ["3.12"]}}}))
+    assert cfg.name == "ci"
+    assert cfg.stacks["python"] == ("3.12",)

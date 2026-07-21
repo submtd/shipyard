@@ -11,6 +11,14 @@ from rigging import stacks
 
 CONFIG_NAME = ".rigging.json"
 
+#: Accepted keys. An unknown key is an error rather than something to
+#: ignore: silently dropping it means the user believes they configured
+#: something they didn't, and the resulting behaviour change surfaces far
+#: from its cause.
+TOP_LEVEL_KEYS = frozenset({"name", "stacks"})
+STACK_KEYS = frozenset({"versions"})
+
+
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
@@ -62,6 +70,13 @@ def load_config(root: Path) -> Optional[Config]:
     if not isinstance(raw, dict):
         raise ConfigError(f"{CONFIG_NAME} must contain a JSON object.")
 
+    unknown = set(raw) - TOP_LEVEL_KEYS
+    if unknown:
+        raise ConfigError(
+            f"{CONFIG_NAME}: unknown key(s) {', '.join(sorted(unknown))}. "
+            f"Allowed keys: {', '.join(sorted(TOP_LEVEL_KEYS))}."
+        )
+
     name = _valid_name(raw.get("name", "ci"))
 
     stacks_raw = raw.get("stacks")
@@ -84,6 +99,14 @@ def load_config(root: Path) -> Optional[Config]:
                 f"JSON object (got {stack_value!r})."
             )
         stack_value = stack_value or {}
+        unknown_stack = set(stack_value) - STACK_KEYS
+        if unknown_stack:
+            raise ConfigError(
+                f"{CONFIG_NAME}: unknown key(s) "
+                f"{', '.join(sorted(unknown_stack))} in 'stacks.{stack_id}'. "
+                f"Allowed keys: {', '.join(sorted(STACK_KEYS))}."
+            )
+
         versions_raw = stack_value.get("versions")
         if versions_raw is None:
             versions = stacks.REGISTRY[stack_id].default_versions

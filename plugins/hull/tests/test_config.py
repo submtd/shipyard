@@ -76,3 +76,19 @@ def test_config_is_frozen_dataclass(tmp_path):
     assert isinstance(cfg, Config)
     with pytest.raises(Exception):
         cfg.name = "changed"
+
+
+# --- unknown keys ----------------------------------------------------------
+
+
+def test_unknown_top_level_key_raises_naming_it(tmp_path):
+    # A user who writes "permissions" believes they configured the
+    # workflow's token scope. They didn't, and nothing said so.
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"name": "security", "permissions": "write-all"}))
+    assert "permissions" in str(e.value)
+
+
+def test_known_keys_together_still_load(tmp_path):
+    cfg = load_config(write(tmp_path, {"name": "security", "scanner": "gitleaks"}))
+    assert (cfg.name, cfg.scanner) == ("security", "gitleaks")
