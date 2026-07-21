@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 CONFIG_NAME = ".keel.json"
@@ -51,6 +52,22 @@ def unreleased_body(text):
     return "\n".join(b for b in body if b.strip())
 
 
+def gained_content(before, after):
+    """True when `after`'s Unreleased section has at least one non-blank line
+    the base's didn't have.
+
+    This used to be `before != after`, which made any difference count --
+    including a pure deletion. A PR that only *removed* an Unreleased entry
+    passed the gate, and the success message told the author their changelog
+    had "gained content". Counting lines (rather than comparing sets) keeps
+    a reworded entry passing: the rewritten line is one the base didn't
+    have, which is a real contribution.
+    """
+    before_counts = Counter(unreleased_body(before).splitlines())
+    after_counts = Counter(unreleased_body(after).splitlines())
+    return any(count > before_counts[line] for line, count in after_counts.items())
+
+
 def _str_or(value, default):
     """Return value if it is a non-empty str, otherwise default. Guards against
     wrong-typed config values (e.g. a prefix given as a number) flowing through
@@ -58,16 +75,46 @@ def _str_or(value, default):
     return value if isinstance(value, str) and value else default
 
 
-def load_cfg(root):
+def _config_text_at_base(base):
+    """The raw .keel.json as it exists on the PR's base ref, or None if the
+    base has no config (or git can't be reached).
+
+    This is deliberately NOT the working tree. In CI the working tree is the
+    PR's own head checkout, so reading the config from it let a PR turn off
+    the gate that reviews it, just by including requireChangelog: false in
+    the same branch. The base ref can only be changed by something that has
+    already been merged -- i.e. already reviewed.
+    """
+    for ref in (f"origin/{base}", base):
+        text = _run_git(["show", f"{ref}:{CONFIG_NAME}"])
+        if text is not None:
+            return text
+    return None
+
+
+def load_cfg(root, base=None):
     """Minimal, tolerant .keel.json read. Returns a flat dict of the fields the
     gate needs, with defaults. Never raises on a bad file -- CI should not crash
-    on config; it degrades to the defaults."""
-    path = Path(root) / CONFIG_NAME
+    on config; it degrades to the defaults.
+
+    When `base` is given, the config is read from that ref and the working
+    tree is used only if the base has no config at all -- which means the
+    repo isn't keel-managed yet (this is the PR adopting it), and there is
+    therefore no already-enabled gate to bypass.
+    """
     raw = {}
-    if path.is_file():
+    text = _config_text_at_base(base) if base is not None else None
+    if text is None:
+        path = Path(root) / CONFIG_NAME
+        if path.is_file():
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                text = None
+    if text is not None:
         try:
-            raw = json.loads(path.read_text()) or {}
-        except (OSError, ValueError):
+            raw = json.loads(text) or {}
+        except ValueError:
             raw = {}
     if not isinstance(raw, dict):
         raw = {}
@@ -109,7 +156,7 @@ def main(argv):
         print("usage: check_changelog.py <base-ref> <head-ref>", file=sys.stderr)
         return 2
     base, head = argv[1], argv[2]
-    cfg = load_cfg(".")
+    cfg = load_cfg(".", base=base)
     if not cfg["require_changelog"]:
         print("changelog check not required by .keel.json")
         return 0
@@ -153,7 +200,7 @@ def main(argv):
         print(f"::warning::could not read CHANGELOG.md at {merge_base}; "
               "skipping (unknown is not a violation)")
         return 0
-    if unreleased_body(here.read_text(encoding="utf-8", errors="replace")) != unreleased_body(before):
+    if gained_content(before, here.read_text(encoding="utf-8", errors="replace")):
         print("CHANGELOG.md Unreleased section gained content — ok")
         return 0
     print("::error::the Unreleased section of CHANGELOG.md gained no content "
