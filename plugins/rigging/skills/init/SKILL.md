@@ -117,7 +117,12 @@ write) and which are already present (must not be touched):
 workflow path is somehow already present anyway (e.g. hand-authored, with no
 `.rigging.json` to match it), treat it like any other present file below.
 
-For each **absent** file, write it:
+For each **absent** file, write it. Use exclusive-create (`open(path, "x")`,
+which raises rather than overwrites if the path exists) for both writes
+below, not `open(path, "w")` — this backstops the classify-gate no-clobber
+guarantee even against a loose reading of these instructions: a file that
+somehow came into existence between the classify check and the write can
+never be silently clobbered.
 
 - `.rigging.json` — the confirmed dict, pretty-printed (`json.dumps(cfg,
   indent=2)` plus a trailing newline):
@@ -125,7 +130,7 @@ For each **absent** file, write it:
       python3 -c "
       import json
       cfg = {'name': 'ci', 'stacks': {'python': {}}}
-      open('.rigging.json', 'w').write(json.dumps(cfg, indent=2) + '\n')
+      open('.rigging.json', 'x').write(json.dumps(cfg, indent=2) + '\n')
       "
 
   (substitute the actual confirmed dict from section 3 for the `cfg` literal
@@ -138,7 +143,7 @@ For each **absent** file, write it:
   the filename you're about to write to by construction:
 
       mkdir -p .github/workflows
-      python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from pathlib import Path; from rigging.config import load_config; from rigging.plan import build_plan; from rigging.render import render; print(render(build_plan(load_config(Path('.')))), end='')" > .github/workflows/<name>.yml
+      python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from pathlib import Path; from rigging.config import load_config; from rigging.plan import build_plan; from rigging.render import render; text = render(build_plan(load_config(Path('.')))); open('.github/workflows/<name>.yml', 'x').write(text)"
 
 For each **present** file, do NOT overwrite. Tell the user it exists and
 offer **keep theirs** — that's the only option; increment 1 has no merge
@@ -169,12 +174,13 @@ Classify against that name, not a freshly-proposed one:
 flow.
 
 If `.github/workflows/<existing_name>.yml` classifies as **absent**, write it
-exactly as section 4's workflow step does, reading the config back off disk
-(the same pre-existing `.rigging.json`, unchanged), so the filename you write
-to and the workflow's internal `name:` always agree:
+exactly as section 4's workflow step does — exclusive-create, so it can never
+clobber a file that appeared after the classify check — reading the config
+back off disk (the same pre-existing `.rigging.json`, unchanged), so the
+filename you write to and the workflow's internal `name:` always agree:
 
     mkdir -p .github/workflows
-    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from pathlib import Path; from rigging.config import load_config; from rigging.plan import build_plan; from rigging.render import render; print(render(build_plan(load_config(Path('.')))), end='')" > .github/workflows/<existing_name>.yml
+    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from pathlib import Path; from rigging.config import load_config; from rigging.plan import build_plan; from rigging.render import render; text = render(build_plan(load_config(Path('.')))); open('.github/workflows/<existing_name>.yml', 'x').write(text)"
 
 If `.github/workflows/<existing_name>.yml` classifies as **present** too,
 there's nothing left to write — tell the user rigging is already fully
@@ -232,6 +238,22 @@ increments, not gaps in this one:
   pull_request]`)
 - hooks (e.g. warning when someone edits `.github/workflows/<name>.yml` by
   hand instead of through rigging)
+
+Two per-stack limitations worth surfacing to a maintainer explicitly, since
+they can make a freshly-scaffolded workflow red for reasons that have
+nothing to do with the project's own tests:
+
+- **node**: the generated job runs `npm ci` then `npm test`. `npm ci`
+  requires a committed `package-lock.json` (it fails outright without one,
+  unlike `npm install`), and `npm test` requires a `test` script defined in
+  `package.json`. Neither is scaffolded or checked by rigging today — if
+  either is missing, tell the user to add it.
+- **python**: the generated job installs `requirements.txt` if present
+  (`if [ -f requirements.txt ]; then pip install -r requirements.txt; fi`),
+  matching GitHub's official python starter workflow. It does not yet
+  handle poetry, pdm, or an editable `pyproject.toml` install — a project
+  using one of those needs to either add a `requirements.txt` or wait for a
+  later rigging increment.
 
 Point the user at `keel:init` / `keel:protect` for the sibling layer rigging
 doesn't own: branch protection, PR/issue templates, CODEOWNERS, and the

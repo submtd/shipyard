@@ -41,7 +41,11 @@ REGISTRY: dict[str, StackSpec] = {
         setup_with_key="python-version",
         default_versions=("3.12",),
         steps=(
-            Step(run="pip install pytest"),
+            Step(run=(
+                "python -m pip install --upgrade pip\n"
+                "pip install pytest\n"
+                "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
+            )),
             Step(run="python -m pytest"),
         ),
     ),

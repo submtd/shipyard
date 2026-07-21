@@ -54,6 +54,13 @@ def test_spec_steps_run_has_no_expression_interpolation(key):
         assert "${{" not in step.run
 
 
+PYTHON_INSTALL_RUN = (
+    "python -m pip install --upgrade pip\n"
+    "pip install pytest\n"
+    "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
+)
+
+
 def test_python_spec_contents():
     spec = REGISTRY["python"]
     assert spec.detect_files == ("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt")
@@ -61,7 +68,22 @@ def test_python_spec_contents():
     assert spec.matrix_var == "python"
     assert spec.setup_with_key == "python-version"
     assert spec.default_versions == ("3.12",)
-    assert spec.steps == (Step(run="pip install pytest"), Step(run="python -m pytest"))
+    assert spec.steps == (Step(run=PYTHON_INSTALL_RUN), Step(run="python -m pytest"))
+
+
+def test_python_install_step_matches_github_starter_workflow_shape():
+    """The python install step mirrors GitHub's official python starter
+    workflow: upgrade pip, install pytest, and conditionally install the
+    project's own requirements.txt if present -- so CI is red only when the
+    project's own tests are red, not merely because its dependencies were
+    never installed."""
+    spec = REGISTRY["python"]
+    install_step = spec.steps[0]
+    assert "\n" in install_step.run
+    lines = install_step.run.split("\n")
+    assert lines[0] == "python -m pip install --upgrade pip"
+    assert lines[1] == "pip install pytest"
+    assert lines[2] == "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
 
 
 def test_node_spec_contents():

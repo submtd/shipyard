@@ -25,14 +25,19 @@ def test_python_job_steps_in_order():
     cfg = Config(name="ci", stacks={"python": ("3.12",)})
     job = build_plan(cfg).jobs[0]
 
+    # The install step's exact body is pinned by rigging.stacks's own tests
+    # (test_stacks.py); here we only need it to match the registry, since a
+    # job's steps are the registry's steps plus checkout/setup wrapping.
+    install_step, test_step = stacks.REGISTRY["python"].steps
+
     assert job.steps == (
         stacks.Step(uses="actions/checkout@v4"),
         stacks.Step(
             uses="actions/setup-python@v5",
             with_={"python-version": "${{ matrix.python }}"},
         ),
-        stacks.Step(run="pip install pytest"),
-        stacks.Step(run="python -m pytest"),
+        install_step,
+        test_step,
     )
 
 

@@ -1,15 +1,26 @@
 """Injection-safety guarantees -- rigging's core security promise.
 
-No rendered workflow ever contains an attacker-controllable `${{ ... }}`
-expression. This is enforced at two layers:
+The STRUCTURAL guarantee is: no `${{ github.* }}` EXPRESSION -- nor any
+expression outside the `${{ matrix.<var> }}` whitelist -- is ever emitted.
+This is deliberately narrower than "the output never contains the substring
+`github.`": a charset-valid version string (VERSION_RE allows `.`) could
+itself spell out the literal substring `github.` and end up quoted as a
+harmless matrix value, with no expression and no injection risk. It's the
+*expression* form that's forbidden, not the text.
+
+This is enforced at two layers:
 
 1. Data layer: no `Step.run` in the stack registry may contain `${{` --
    a future stack contribution can't smuggle an expression into a run
    command.
-2. Rendered-output layer: every `- run:` block in generated YAML is scanned
-   for `${{`, and every `${{ ... }}` expression that DOES appear anywhere
-   in the output (e.g. in a `with:` block) must be one of the whitelisted
+2. Rendered-output layer: every `- run:` block in generated YAML (both the
+   single-line and multi-line block-scalar forms) is scanned for `${{`, and
+   every `${{ ... }}` expression that DOES appear anywhere in the output
+   (e.g. in a `with:` block) must be one of the whitelisted
    `${{ matrix.<var> }}` forms -- nothing else, and never `github.*`.
+   Assertion 3 below (`test_every_expression_is_whitelisted_matrix_form`) is
+   the load-bearing check for this guarantee; it is never weakened to
+   accommodate anything outside the whitelist.
 
 Stdlib only: re, json, pathlib, pytest.
 """
@@ -91,7 +102,12 @@ def test_run_blocks_never_contain_an_expression(all_outputs):
             )
 
 
-# --- Assertion 3: whitelisted-expression-only -----------------------------
+# --- Assertion 3: whitelisted-expression-only (LOAD-BEARING) --------------
+#
+# This is the actual structural guarantee: every `${{ ... }}` expression
+# that appears anywhere in the rendered output must fullmatch the
+# `${{ matrix.<var> }}` whitelist. Nothing else -- in particular no
+# `${{ github.* }}` -- ever passes. Never weaken this assertion.
 
 
 def test_every_expression_is_whitelisted_matrix_form(all_outputs):
@@ -105,7 +121,15 @@ def test_every_expression_is_whitelisted_matrix_form(all_outputs):
             )
 
 
-# --- Assertion 4: no github context ---------------------------------------
+# --- Assertion 4: incidental substring scan (default configs only) --------
+#
+# NOT a general structural guarantee -- see the module docstring. Over these
+# specific default-config fixtures (versions like "3.12"/"20", no hostile
+# input), the substring `github.` happens not to appear anywhere, so this
+# scan holds incidentally. It is not proof against every possible
+# charset-valid config: a version string could legally contain the
+# substring `github.` without being an expression or a security issue.
+# Assertion 3 above is the one that actually carries the guarantee.
 
 
 def test_no_github_context_reference(all_outputs):
