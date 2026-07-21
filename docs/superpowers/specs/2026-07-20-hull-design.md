@@ -44,7 +44,7 @@ dependency-audit arrives (inc 2+).
 | Path | Responsibility | Pure |
 |------|----------------|------|
 | `hull/__init__.py` | `__version__ = "0.1.0"` | ✓ |
-| `hull/scanners.py` | Pure-data scanner registry (the seam; analog of rigging/stacks.py along the SCANNER axis). Frozen `ScannerSpec` for gitleaks: pinned action ref `gitleaks/gitleaks-action@v2`, checkout `fetch-depth "0"` (full-history scan), env `{GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}`. `REGISTRY`, `SCANNER_IDS`. The single home for every pinned third-party ref and the one whitelisted expression. No registry `run` step contains `${{`. | ✓ |
+| `hull/scanners.py` | Pure-data scanner registry (the seam; analog of rigging/stacks.py along the SCANNER axis). Frozen `ScannerSpec` for gitleaks: pinned action ref `gitleaks/gitleaks-action@v2`, checkout `fetch-depth "0"` (so the base commit is available for the incremental diff), env `{GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}`. `REGISTRY`, `SCANNER_IDS`. The single home for every pinned third-party ref and the one whitelisted expression. No registry `run` step contains `${{`. | ✓ |
 | `hull/config.py` | `load_config(root) -> Optional[Config(name, scanner)]`; absent → None; invalid → `ConfigError` naming the field. `name` via `NAME_RE.fullmatch` (default `"security"`); `scanner` in `scanners.SCANNER_IDS` (default `"gitleaks"`). Mirrors rigging/config.py. | ✓ |
 | `hull/plan.py` | `build_plan(cfg) -> ScanPlan(name, jobs)`. One `Job` (id = scanner id, `runs-on ubuntu-latest`, **NO matrix** — stack-agnostic), steps = pinned checkout (fetch-depth 0) + the scanner's `uses` step with its env. Least-privilege `permissions: contents: read`. | ✓ |
 | `hull/render.py` | `render(plan) -> str` deterministic GitHub Actions YAML. Ports rigging's `_quote` (every scalar double-quoted) and `iter_run_blocks` (for the injection test). Emits `on: [push, pull_request]` and `permissions: contents: read`. Same plan in → byte-identical out. | ✓ |
@@ -106,8 +106,9 @@ today, so hull dogfoods by ADDING `.hull.json` + `.github/workflows/security.yml
 None; `render(build_plan(load_config(REPO))) == (REPO/".github/workflows/security.yml").read_text()`
 byte-for-byte (the drift guard); the workflow references the pinned gitleaks action.
 The plugin suite that authors secret-scanning becomes secret-scanned itself,
-full-history, on every push and PR — and it passes clean on a repo with no
-committed secrets.
+on every push and PR (each event scans its own incremental commit range; a
+scheduled full-history sweep is deferred — see above) — and it passes clean
+on a repo with no committed secrets.
 
 **Required cross-plugin integration (ballast now owns `pytest.ini`):** register
 hull in `.claude-plugin/marketplace.json`; add `plugins/hull/tests` to

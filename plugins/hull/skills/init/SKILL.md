@@ -64,13 +64,18 @@ Build a signals dict and ask the user only for what you cannot infer:
 - `name` — optional; defaults to `"security"` inside `propose_config`. This
   becomes both the workflow's `name:` and the filename
   `.github/workflows/<name>.yml`, so ask if the repo already has a
-  convention here. **If the user asks for `name: "ci"`, warn them before
-  proceeding**: `.github/workflows/ci.yml` is the conventional filename
-  `rigging:init` scaffolds for the test-CI workflow, and picking it for hull
-  too means whichever plugin runs `init` second will hit the no-clobber stop
-  in section 3 below against the other's file. Confirm they still want `ci`
-  (e.g. because they've deliberately renamed rigging's workflow elsewhere)
-  before using it.
+  convention here. **If the user asks for a `name` that is any case variant
+  of `"ci"` (compare with `name.lower() == "ci"` — so `"ci"`, `"CI"`, `"Ci"`,
+  `"cI"` all match), warn them before proceeding**: `.github/workflows/ci.yml`
+  is the conventional filename `rigging:init` scaffolds for the test-CI
+  workflow, and `config.NAME_RE` accepts any of those case variants, so
+  picking one for hull risks a filename collision with rigging's `ci.yml` —
+  outright (on a case-sensitive filesystem, e.g. Linux/CI, `CI.yml` and
+  `ci.yml` coexist as distinct files, which then collides for any teammate on
+  a case-insensitive filesystem, e.g. macOS/Windows, checking out both) or via
+  the no-clobber stop in section 3 below (exact-case match). Confirm they
+  still want that name (e.g. because they've deliberately renamed rigging's
+  workflow elsewhere) before using it.
 - `scanner` — optional; defaults to `"gitleaks"` inside `propose_config`,
   currently the only registered scanner id
   (`hull.scanners.SCANNER_IDS == ("gitleaks",)`). No need to ask unless the
@@ -88,9 +93,9 @@ e.g.:
     "
 
 Show the result to the user in full and confirm. If they want changes
-(rename, though not to `ci` without the warning above), adjust the signals
-dict and re-show — don't write anything until they've approved what's on
-screen.
+(rename, though not to any case variant of `ci` without the warning above),
+adjust the signals dict and re-show — don't write anything until they've
+approved what's on screen.
 
 `propose_config` raises `ValueError` — naming the offending field — on a
 `name` outside its allowed charset or an unknown `scanner` id (this is also
@@ -228,7 +233,7 @@ Point the user at:
 - `rigging:init` — the sibling layer that authors the test-CI workflow
   (`.rigging.json`, `.github/workflows/ci.yml` by default). hull does not
   own that file; it only guards against a filename collision with it (see
-  section 2's warning on `name: "ci"`).
+  section 2's warning on any case variant of `name: "ci"`).
 - `ballast:init` — the test-runner config layer (`.ballast.json`,
   `pytest.ini`) that rigging's workflow actually runs.
 - `stow:init` — baseline repo hygiene (`.stow.json`, managed `.gitignore`
