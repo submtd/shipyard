@@ -39,6 +39,11 @@ and could stop an installed copy from updating.
 
 - A decision record for `fathom`, the seventh plugin from the original
   blueprint: not built, and the roster closes at six.
+- README rewritten around the closed six-plugin roster: the opening
+  paragraph is a table rather than a six-clause sentence, the Status section
+  no longer repeats it six times, and the claim that `fathom` was "the only
+  remaining sibling on the roadmap" is gone -- it contradicted the decision
+  record. Documents `pushBranches` and the pytest bound.
 
 ## [0.4.0] - 2026-07-21
 
