@@ -1,8 +1,13 @@
 {
   "name": "bosun",
   "displayName": "bosun",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Authors a Dependabot config (.github/dependabot.yml) to keep a repo's dependencies updated.",
   "license": "MIT",
-  "keywords": ["dependencies", "dependabot", "github-actions", "updates"]
+  "keywords": [
+    "dependencies",
+    "dependabot",
+    "github-actions",
+    "updates"
+  ]
 }

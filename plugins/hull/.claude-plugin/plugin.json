@@ -1,8 +1,13 @@
 {
   "name": "hull",
   "displayName": "hull",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Authors a secret-scanning CI workflow (gitleaks) for a repo.",
   "license": "MIT",
-  "keywords": ["security", "secrets", "gitleaks", "github-actions"]
+  "keywords": [
+    "security",
+    "secrets",
+    "gitleaks",
+    "github-actions"
+  ]
 }

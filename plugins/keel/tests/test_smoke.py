@@ -18,7 +18,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 #: Every skill keel ships. Listed explicitly rather than globbed so that
 #: deleting a skill fails here instead of silently shrinking what's
