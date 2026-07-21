@@ -117,3 +117,23 @@ def test_stack_value_non_object_non_null_raises(tmp_path):
 def test_versions_non_list_raises(tmp_path):
     with pytest.raises(ConfigError):
         load_config(write(tmp_path, {"stacks": {"python": {"versions": "3.12"}}}))
+
+
+def test_name_with_trailing_newline_raises(tmp_path):
+    with pytest.raises(ConfigError):
+        load_config(write(tmp_path, {"name": "ci\n", "stacks": {"python": {}}}))
+
+
+def test_version_with_trailing_newline_raises(tmp_path):
+    with pytest.raises(ConfigError):
+        load_config(write(tmp_path, {
+            "stacks": {"python": {"versions": ["3.9\n"]}}
+        }))
+
+
+def test_valid_name_and_version_still_load(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "name": "ci", "stacks": {"python": {"versions": ["3.9"]}}
+    }))
+    assert cfg.name == "ci"
+    assert cfg.stacks == {"python": ("3.9",)}

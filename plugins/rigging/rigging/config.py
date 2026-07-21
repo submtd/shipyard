@@ -26,7 +26,7 @@ class Config:
 
 
 def _valid_name(value, field="name"):
-    if not isinstance(value, str) or not NAME_RE.match(value):
+    if not isinstance(value, str) or not NAME_RE.fullmatch(value):
         raise ConfigError(
             f"{CONFIG_NAME}: '{field}' must be a string matching "
             f"{NAME_RE.pattern} (got {value!r})."
@@ -42,7 +42,7 @@ def _valid_versions(value, stack_id):
         )
     versions = []
     for v in value:
-        if not isinstance(v, str) or not VERSION_RE.match(v):
+        if not isinstance(v, str) or not VERSION_RE.fullmatch(v):
             raise ConfigError(
                 f"{CONFIG_NAME}: 'stacks.{stack_id}.versions' entries must "
                 f"be strings matching {VERSION_RE.pattern} (got {v!r})."
