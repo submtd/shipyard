@@ -2,7 +2,10 @@
 
 Shipyard is a suite of Claude Code plugins for project tooling. **`keel`** is
 its first member: it owns a project's git lifecycle — how work starts, how it
-lands, and how it ships.
+lands, and how it ships. **`rigging`** is its second: it detects a repo's
+stack and scaffolds a safe GitHub Actions CI workflow, via its `rigging:init`
+skill. This README documents `keel`; rigging's usage lives in its
+`skills/init/SKILL.md`.
 
 ## Why this exists
 
@@ -265,10 +268,15 @@ it scaffolds keel's lifecycle artifacts (`.keel.json`, a changelog,
 PR/issue templates, CODEOWNERS, the changelog CI gate, and an optional
 license) into a repo.
 
-Planned: sibling Shipyard plugins for the domains keel deliberately leaves
-alone — CI pipeline authoring (`rigging`), dependency management (`bosun`/
-`manifest`), test tooling (`ballast`), security scanning (`hull`), and
-debugging/profiling (`fathom`).
+`rigging` is v0.1.0 and has shipped as Shipyard's second plugin: CI pipeline
+authoring for `python` and `node` repos, via `rigging:init`. It's dogfooded
+on this repo — this repo's own [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+is rendered by rigging from its [`.rigging.json`](.rigging.json).
+
+Planned: sibling Shipyard plugins for the domains keel and rigging
+deliberately leave alone — dependency management (`bosun`/`manifest`), test
+tooling (`ballast`), security scanning (`hull`), and debugging/profiling
+(`fathom`).
 
 ## License
 

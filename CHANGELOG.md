@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `rigging`, Shipyard's second plugin: CI pipeline authoring. Detects a
+  repo's stack (`python`, `node`) and scaffolds an injection-safe GitHub
+  Actions test workflow with absolute no-clobber. Dogfooded to generate
+  shipyard's own `ci.yml`.
 - `keel:init` — scaffolds keel's lifecycle artifacts into a repo (`.keel.json`
   with detected topology, a Keep-a-Changelog skeleton, PR/issue templates,
   CODEOWNERS, the changelog CI gate, and an optional license). Absolute

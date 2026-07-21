@@ -8,6 +8,12 @@
       "source": "./plugins/keel",
       "description": "Guides a project's git lifecycle: start work, land it, ship it.",
       "category": "workflow"
+    },
+    {
+      "name": "rigging",
+      "source": "./plugins/rigging",
+      "description": "Authors CI pipelines: detects a repo's stack and scaffolds a safe GitHub Actions workflow.",
+      "category": "workflow"
     }
   ]
 }
