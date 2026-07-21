@@ -7,6 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `hull`, Shipyard's fifth plugin: renders an injection-safe gitleaks
+  secret-scan `.github/workflows/security.yml` from a committed
+  `.hull.json`. Dogfooded net-new on shipyard's own repo.
 - `ballast`, Shipyard's fourth plugin: renders `pytest.ini` from a committed
   `.ballast.json` -- import-mode, testpaths, pythonpath -- so pytest collects
   the right tests. Python-only in this increment. Dogfooded on shipyard's own

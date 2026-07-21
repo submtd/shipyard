@@ -8,9 +8,11 @@ skill. **`stow`** is its third: it manages a repo's baseline files —
 `.gitignore` sections per detected stack — via its `stow:init` skill, keeping
 them updatable in place without clobbering hand-written lines. **`ballast`**
 is its fourth: it configures the pytest runner, rendering `pytest.ini` from a
-committed `.ballast.json` via its `ballast:init` skill. This README documents
-`keel`; rigging's, stow's, and ballast's usage live in their own
-`skills/init/SKILL.md`.
+committed `.ballast.json` via its `ballast:init` skill. **`hull`** is its
+fifth: it authors an injection-safe gitleaks secret-scan CI workflow,
+rendering `.github/workflows/security.yml` from a committed `.hull.json`
+via its `hull:init` skill. This README documents `keel`; rigging's, stow's,
+ballast's, and hull's usage live in their own `skills/init/SKILL.md`.
 
 ## Why this exists
 
@@ -292,10 +294,16 @@ Python-only in this increment. It's dogfooded on this repo — this repo's own
 [`pytest.ini`](pytest.ini) is ballast's rendered output from its
 [`.ballast.json`](.ballast.json).
 
-Planned: sibling Shipyard plugins for the domains keel, rigging, stow, and
-ballast deliberately leave alone — dependency management
-(`bosun`/`manifest`), security scanning (`hull`), and debugging/profiling
-(`fathom`).
+`hull` is v0.1.0 and has shipped as Shipyard's fifth plugin: it renders an
+injection-safe gitleaks secret-scan `.github/workflows/security.yml` from a
+committed `.hull.json`, via `hull:init`. Stack-agnostic — a secret scanner
+runs the same way regardless of language. It's dogfooded on this repo —
+this repo's own [`security.yml`](.github/workflows/security.yml) is hull's
+rendered output from its [`.hull.json`](.hull.json).
+
+Planned: sibling Shipyard plugins for the domains keel, rigging, stow,
+ballast, and hull deliberately leave alone — dependency management
+(`bosun`/`manifest`) and debugging/profiling (`fathom`).
 
 ## License
 

@@ -26,6 +26,12 @@
       "source": "./plugins/ballast",
       "description": "Configures the pytest runner: renders pytest.ini from .ballast.json so tests resolve and collect correctly.",
       "category": "workflow"
+    },
+    {
+      "name": "hull",
+      "source": "./plugins/hull",
+      "description": "Authors a secret-scanning CI workflow (gitleaks) for a repo.",
+      "category": "workflow"
     }
   ]
 }
