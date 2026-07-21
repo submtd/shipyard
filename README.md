@@ -120,7 +120,7 @@ just `feature/*`/`hotfix/*`.
 This repository's own [`.keel.json`](.keel.json) uses `trunk`, since it has
 no `develop` branch.
 
-## The ten skills
+## The eleven skills
 
 In lifecycle order:
 
@@ -148,6 +148,9 @@ In lifecycle order:
 10. **`keel:doctor`** — explain what keel currently sees, what a rule name
     means, and why it decided what it did, when you were blocked or warned
     unexpectedly.
+11. **`keel:init`** — set up keel in a repo: scaffold `.keel.json`, a
+    changelog, PR/issue templates, CODEOWNERS, the changelog CI gate, and optionally
+    a license — detecting defaults and never overwriting existing files.
 
 ## The six rules
 

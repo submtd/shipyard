@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `keel:init` — scaffolds keel's lifecycle artifacts into a repo (`.keel.json`
+  with detected topology, a Keep-a-Changelog skeleton, PR/issue templates,
+  CODEOWNERS, the changelog CI gate, and an optional license). Absolute
+  no-clobber; a top-up mode for already-managed repos. Lifecycle only — no
+  language tooling.
 - CI `changelog` job that enforces keel's changelog rule server-side, built
   on keel's own parser so the check and the in-editor hook cannot disagree.
   Wired into `main`'s required status checks via branch protection.
