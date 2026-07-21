@@ -69,6 +69,52 @@ def test_custom_name_flows_through(tmp_path):
     assert loaded.name == "my-CI_1"
 
 
+@pytest.mark.parametrize(
+    "bad_version",
+    ["3.10 beta", "3.9\n", "a}}b"],
+    ids=["space", "newline", "braces"],
+)
+def test_bad_version_string_raises_value_error_naming_field(bad_version):
+    with pytest.raises(ValueError, match="versions"):
+        propose_config({
+            "stacks": ("python",),
+            "versions": {"python": [bad_version]},
+        })
+
+
+def test_non_string_version_entry_raises_value_error_naming_field():
+    with pytest.raises(ValueError, match="versions"):
+        propose_config({
+            "stacks": ("python",),
+            "versions": {"python": [3, 10]},
+        })
+
+
+def test_valid_explicit_version_still_round_trips(tmp_path):
+    cfg = propose_config({
+        "stacks": ("python",),
+        "versions": {"python": ["3.10"]},
+    })
+    assert cfg["stacks"]["python"] == {"versions": ["3.10"]}
+    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)
+    assert loaded.stacks["python"] == ("3.10",)
+
+
+def test_versions_not_a_dict_raises_value_error_naming_field():
+    with pytest.raises(ValueError, match="versions"):
+        propose_config({"stacks": ("python",), "versions": ["3.10"]})
+
+
+def test_ci_files_rejects_path_traversal_name():
+    with pytest.raises(ValueError, match="name"):
+        CI_FILES("../evil")
+
+
+def test_ci_files_returns_two_expected_paths_for_valid_name():
+    assert CI_FILES("ci") == [".rigging.json", ".github/workflows/ci.yml"]
+
+
 def test_unknown_stack_id_raises_value_error_naming_field():
     with pytest.raises(ValueError, match="stacks"):
         propose_config({"stacks": ("ruby",)})

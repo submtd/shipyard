@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rigging.config import NAME_RE
+from rigging.config import NAME_RE, VERSION_RE
 from rigging.stacks import STACK_IDS
 
 
@@ -39,7 +39,14 @@ def propose_config(signals):
             f"ids (got {stack_ids!r})."
         )
 
-    versions_by_id = signals.get("versions", {})
+    versions_by_id = signals.get("versions")
+    if versions_by_id is None:
+        versions_by_id = {}
+    elif not isinstance(versions_by_id, dict):
+        raise ValueError(
+            f"signals['versions'] must be a dict of stack id -> list of "
+            f"version strings (got {versions_by_id!r})."
+        )
 
     stacks_out = {}
     for stack_id in stack_ids:
@@ -49,13 +56,27 @@ def propose_config(signals):
                 f"Allowed ids: {', '.join(STACK_IDS)}."
             )
         versions = versions_by_id.get(stack_id)
-        stacks_out[stack_id] = {"versions": list(versions)} if versions else {}
+        if versions:
+            for version in versions:
+                if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
+                    raise ValueError(
+                        f"signals['versions'][{stack_id!r}] entries must be "
+                        f"non-empty strings matching {VERSION_RE.pattern} "
+                        f"(got {version!r})."
+                    )
+            stacks_out[stack_id] = {"versions": list(versions)}
+        else:
+            stacks_out[stack_id] = {}
 
     return {"name": name, "stacks": stacks_out}
 
 
 def CI_FILES(name):
     """Candidate paths init may write, in the order it reports them."""
+    if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+        raise ValueError(
+            f"name must be a string matching {NAME_RE.pattern} (got {name!r})."
+        )
     return [".rigging.json", f".github/workflows/{name}.yml"]
 
 
