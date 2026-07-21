@@ -90,3 +90,25 @@ def test_config_is_frozen_dataclass(tmp_path):
     assert isinstance(cfg, Config)
     with pytest.raises(Exception):
         cfg.stacks = {}
+
+
+# --- unknown keys ----------------------------------------------------------
+
+
+def test_unknown_top_level_key_raises_naming_it(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {}}, "gitignore": ["x"]}))
+    assert "gitignore" in str(e.value)
+
+
+def test_key_inside_a_stack_object_raises(tmp_path):
+    # Stack values carry no options today. Accepting one and then ignoring
+    # it tells the user they configured something they didn't.
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {"entries": ["*.pyc"]}}}))
+    assert "entries" in str(e.value)
+
+
+def test_empty_and_null_stack_values_still_load(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"python": {}, "node": None}}))
+    assert set(cfg.stacks) == {"python", "node"}

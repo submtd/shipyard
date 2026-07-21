@@ -84,6 +84,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`708 tests`, `four plugin test dirs`) that a following agent would
   compare against and report a false failure. It now checks the invariant:
   every configured `testPaths` entry exists and collection is non-empty.
+### Changed
+
+- All six plugins now reject unknown keys in their config files instead of
+  silently ignoring them, naming the offending key and listing what is
+  allowed. This applies to nested objects too (`keel`'s `branches`,
+  `prefixes` and `mergeStrategy`; per-stack and per-ecosystem objects
+  elsewhere). Previously a one-character typo was invisible: `versinos`
+  reverted `rigging`'s whole CI matrix to the registry default, `intrval`
+  silently gave `bosun` weekly when the user asked for daily, and a
+  `permissions` key in `.hull.json` looked like it configured the
+  workflow's token scope while doing nothing. `stow` stack values take no
+  options at all, so any key inside one is now an error rather than a
+  pretence.
+
+  This is a behaviour change for any config that currently carries an
+  unrecognised key -- such a file now fails to load rather than loading
+  with that key dropped. The message names the key, and the fix is to
+  remove or correct it. Note the CI changelog gate keeps its own
+  deliberately tolerant reader: CI must not crash on config.
 
 ### Added
 

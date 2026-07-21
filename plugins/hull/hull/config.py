@@ -11,6 +11,13 @@ from hull import scanners
 
 CONFIG_NAME = ".hull.json"
 
+#: Accepted keys. An unknown key is an error rather than something to
+#: ignore: silently dropping it means the user believes they configured
+#: something they didn't, and the resulting behaviour change surfaces far
+#: from its cause.
+TOP_LEVEL_KEYS = frozenset({"name", "scanner"})
+
+
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -52,6 +59,13 @@ def load_config(root: Path) -> Optional[Config]:
         raise ConfigError(f"{CONFIG_NAME} could not be read: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"{CONFIG_NAME} must contain a JSON object.")
+
+    unknown = set(raw) - TOP_LEVEL_KEYS
+    if unknown:
+        raise ConfigError(
+            f"{CONFIG_NAME}: unknown key(s) {', '.join(sorted(unknown))}. "
+            f"Allowed keys: {', '.join(sorted(TOP_LEVEL_KEYS))}."
+        )
 
     name = _valid_name(raw.get("name", "security"))
     scanner = _valid_scanner(raw.get("scanner", "gitleaks"))

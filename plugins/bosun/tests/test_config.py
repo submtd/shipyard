@@ -112,3 +112,28 @@ def test_ecosystem_config_is_frozen_dataclass(tmp_path):
 def test_interval_non_string_raises(tmp_path):
     with pytest.raises(ConfigError):
         load_config(write(tmp_path, {"ecosystems": {"python": {"interval": 7}}}))
+
+
+# --- unknown keys ----------------------------------------------------------
+#
+# The hand-edit path is where typos actually happen, and it was the lenient
+# one: scaffold.propose_config already raises on a typo'd ecosystem id, but
+# load_config accepted "intrval" and silently gave the user weekly when they
+# asked for daily.
+
+
+def test_unknown_top_level_key_raises_naming_it(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"ecosystems": {"python": {}}, "version": 3}))
+    assert "version" in str(e.value)
+
+
+def test_unknown_per_ecosystem_key_raises_naming_it(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"ecosystems": {"python": {"intrval": "daily"}}}))
+    assert "intrval" in str(e.value)
+
+
+def test_known_keys_still_load(tmp_path):
+    cfg = load_config(write(tmp_path, {"ecosystems": {"python": {"interval": "daily"}}}))
+    assert cfg.ecosystems["python"].interval == "daily"
