@@ -250,7 +250,8 @@ in this one:
   an organization-owned repo needs one; setting a repo/org secret is outside
   what a rendered workflow file can do)
 - configurable triggers (today's workflow is always
-  `on: [push, pull_request]`)
+  `on: [push, pull_request]`), including a scheduled or manually-dispatched
+  full-history sweep — see the adoption note below
 - scan-scope configuration (path allow/deny lists, custom gitleaks rules) —
   today's job runs gitleaks with its own defaults
 - migrating or reconciling a pre-existing, foreign workflow file at
@@ -259,3 +260,24 @@ in this one:
   ways to change it are hand-editing the file and re-running `hull:init` to
   pick up the new workflow, or deleting the workflow file first if you want
   it re-rendered)
+
+## Adoption: scan the existing history once, by hand
+
+Say this to the user plainly when `hull:init` finishes on a repo that
+already has commits. The rendered workflow triggers on `push` and
+`pull_request`, and `gitleaks-action` scans the *commit range of the event*
+— that's what `fetch-depth: 0` is there to make possible. So the very run
+triggered by the commit that adds `security.yml` scans only that commit.
+
+The consequence is worth being explicit about, because the green check is
+misleading: **a secret committed before adoption is not found by this
+workflow.** The repo shows a passing secret-scan and has never actually
+been scanned.
+
+Recommend a one-time sweep over the full history at adoption:
+
+    gitleaks detect --source . --redact
+
+(`detect` walks git history; the workflow's `protect`-style range scan does
+not.) If it finds anything, rotating the credential is the first step —
+rewriting history does not un-leak a secret that has already been pushed.

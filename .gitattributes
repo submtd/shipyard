@@ -1,3 +1,17 @@
+# Normalize line endings for everything. Five of the six plugin suites do
+# byte-for-byte comparisons against committed files (.gitignore, ci.yml,
+# security.yml, dependabot.yml, pytest.ini and the golden fixtures), so a
+# Windows checkout with core.autocrlf=true would fail them all. The
+# per-file rules below predate this line and are kept as documentation of
+# which artifacts are byte-compared.
+* text=auto eol=lf
+
 pytest.ini text eol=lf
 .ballast.json text eol=lf
 plugins/ballast/tests/golden/*.ini text eol=lf
+plugins/rigging/tests/golden/*.yml text eol=lf
+plugins/hull/tests/golden/*.yml text eol=lf
+plugins/bosun/tests/golden/*.yml text eol=lf
+.gitignore text eol=lf
+.github/workflows/*.yml text eol=lf
+.github/dependabot.yml text eol=lf
