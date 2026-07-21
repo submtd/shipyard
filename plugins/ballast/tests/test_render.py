@@ -195,3 +195,47 @@ def test_every_line_is_a_single_ini_token_no_embedded_newlines(tmp_path):
     # round-trips, proving no stray line terminator variant (\r, \r\n) crept
     # in either.
     assert "\n".join(out.splitlines()) + "\n" == out
+
+
+# --- the rendered file must actually work --------------------------------
+
+
+def test_every_rendered_value_line_survives_shlex_split():
+    """The property the charset rules exist to guarantee, asserted directly.
+
+    pytest shlex-splits addopts/testpaths/pythonpath, so an unbalanced quote
+    anywhere in the rendered file is fatal before collection. The golden and
+    dogfood tests compare text and cannot see this; this one tokenizes the
+    rendered output the same way pytest will.
+    """
+    import shlex
+
+    cfg = Config(stacks={"python": PytestConfig(
+        test_paths=("tests", "pkg/tests"),
+        python_path=("src",),
+        import_mode="importlib",
+        add_opts=("-q", "--strict-markers", "--cov=src"),
+    )})
+    for line in render(cfg).splitlines():
+        if not line.strip() or line.startswith("["):
+            continue
+        value = line.split("=", 1)[1] if "=" in line else line
+        shlex.split(value)  # raises ValueError if a quote is unbalanced
+
+
+def test_render_refuses_a_multi_stack_config_instead_of_dropping_stacks():
+    """render() reads only the first stack. Today STACK_IDS == ("python",)
+    so that's unreachable -- but config.py and scaffold.py are both written
+    generically over STACK_IDS, so the day a second stack is registered this
+    line becomes silent data loss in the one module nobody would think to
+    change. Its docstring advertised the opposite ("a later increment that
+    adds more stacks doesn't have to touch this line"). Fail loudly instead;
+    it's free now and expensive later.
+    """
+    cfg = Config(stacks={
+        "python": PytestConfig(("tests",), (), "importlib", ()),
+        "node": PytestConfig(("spec",), (), "importlib", ()),
+    })
+    with pytest.raises(ValueError) as e:
+        render(cfg)
+    assert "one stack" in str(e.value)
