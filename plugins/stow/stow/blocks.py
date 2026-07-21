@@ -70,9 +70,11 @@ def render_block(spec: StackSpec) -> str:
 def find_blocks(text: str) -> tuple:
     """Scan `text` for stow managed-block markers.
 
-    `text` is assumed to already use `\\n` line endings (apply_blocks
-    normalizes before calling this; called directly, e.g. by a dogfood
-    check, callers should normalize first too).
+    Line endings are normalized internally, so CRLF text parses the same as
+    LF text. This used to be the caller's job, which made the failure mode
+    silent rather than loud: the marker regexes are `\\Z`-anchored, so on a
+    CRLF file every marker line ends in `\\r`, matches nothing, and a
+    corrupt file reports *no* malformed markers.
 
     Returns `(well_formed, malformed)`:
       - `well_formed`: list of `(id, start_line_idx, end_line_idx)`, 0-based
@@ -83,7 +85,7 @@ def find_blocks(text: str) -> tuple:
         markers all parse cleanly (no unterminated opener, no orphan
         closer, no mismatched pair, no duplicate block id).
     """
-    lines = text.split("\n")
+    lines = _normalize_newlines(text).split("\n")
     well_formed: list = []
     malformed: list = []
     open_id = None

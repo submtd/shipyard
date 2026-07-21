@@ -5,6 +5,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `stow` no longer risks emptying a repo's `.gitignore`. The write went
+  through a bare `Path.write_text`, which truncates the file *before* it
+  encodes -- so on a machine whose preferred codec isn't UTF-8, the
+  advisory line's em dash raised `UnicodeEncodeError` against an
+  already-empty file and the user's hand-written ignore rules were gone.
+  Writes now go through a new `stow.fileio`: explicit UTF-8, staged into a
+  sibling temp file and swapped with `os.replace`, so a failed or
+  interrupted write leaves the original intact. Symlinked `.gitignore`
+  files are written through rather than replaced.
+- `stow.blocks.find_blocks` now normalizes line endings itself instead of
+  requiring callers to. The marker regexes are `\Z`-anchored, so on a CRLF
+  file every marker line ended in `\r`, matched nothing, and a genuinely
+  corrupt `.gitignore` was reported as having no malformed markers -- the
+  skill's verification step was the caller that got that vacuous pass.
+
 ### Added
 
 - `bosun`, Shipyard's sixth and final core plugin: renders an

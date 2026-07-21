@@ -25,7 +25,10 @@ def load_config(root: Path) -> Optional[Config]:
     if not path.is_file():
         return None
     try:
-        raw = json.loads(path.read_text())
+        # encoding is explicit: JSON is UTF-8 by definition, and reading it
+        # with the locale's preferred codec turns a valid config into a
+        # ConfigError on any non-UTF-8 machine.
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ConfigError(f"{CONFIG_NAME} could not be read: {exc}") from exc
     if not isinstance(raw, dict):

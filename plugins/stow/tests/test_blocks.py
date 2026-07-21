@@ -777,3 +777,21 @@ def test_bare_cr_input_is_also_normalized():
 
 def test_stow_error_is_an_exception():
     assert issubclass(StowError, Exception)
+
+
+def test_find_blocks_parses_crlf_text_rather_than_silently_seeing_nothing():
+    # find_blocks used to require callers to normalize first, and the one
+    # caller that didn't (the skill's verification step) got a vacuous pass:
+    # OPENER_RE is \Z-anchored, so on CRLF every marker line ends in "\r",
+    # matches nothing, and a genuinely corrupt file reports "no malformed
+    # markers". Normalizing inside find_blocks removes the footgun.
+    text = render_block(BASE).replace("\n", "\r\n")
+    well_formed, malformed = find_blocks(text)
+    assert not malformed
+    assert [b[0] for b in well_formed] == [BASE.id]
+
+
+def test_find_blocks_still_reports_malformed_markers_on_crlf_text():
+    text = ("# >>> stow:base >>>\r\n" "some line\r\n")  # opener, no closer
+    _, malformed = find_blocks(text)
+    assert malformed and "no matching closer" in malformed[0]
