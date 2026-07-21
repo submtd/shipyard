@@ -49,15 +49,24 @@ def test_survives_an_ascii_preferred_locale(tmp_path):
     target = tmp_path / ".gitignore"
     target.write_text("MY_CUSTOM_LINE\nsecret.key\n", encoding="utf-8")
 
+    # The script text must stay pure ASCII. Passing the em dash on the
+    # command line makes the child fail while *decoding its own argv* under
+    # an ASCII locale -- before a line of stow runs -- which on Linux turns
+    # this into a test of CPython's argv handling rather than of the write.
+    # (macOS decodes argv differently and hid this; CI caught it.) So the
+    # child imports the real ADVISORY itself, which also means the test
+    # exercises the production string rather than a copy of it.
     script = (
         "import sys; sys.path.insert(0, {root!r});"
+        "from stow.blocks import ADVISORY;"
         "from stow.fileio import write_managed_file;"
-        "write_managed_file({target!r}, {text!r})"
+        "write_managed_file({target!r}, {prefix!r} + ADVISORY + '\\n')"
     ).format(
         root=str(PLUGIN_ROOT),
         target=str(target),
-        text="MY_CUSTOM_LINE\nsecret.key\n" + NON_ASCII,
+        prefix="MY_CUSTOM_LINE\nsecret.key\n",
     )
+    assert script.isascii(), "the child's command line must not carry non-ASCII"
     proc = subprocess.run(
         [sys.executable, "-c", script],
         env=ASCII_LOCALE_ENV,
