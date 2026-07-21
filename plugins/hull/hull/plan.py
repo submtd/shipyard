@@ -29,11 +29,19 @@ class ScanPlan:
     jobs: tuple[Job, ...]
 
 
+#: The checkout pin, named rather than inlined so tests (and
+#: scripts/sync_action_pins.py) have one place to read it from. rigging's
+#: plan.py has had CHECKOUT_STEP for the same reason; hull inlining it is
+#: why hull's tests used to restate the SHA literal in four places.
+CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+CHECKOUT_VERSION = "v7"
+
+
 def _build_job(scanner_id: str) -> Job:
     spec = scanners.REGISTRY[scanner_id]
     checkout_step = scanners.Step(
-        uses="actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-        uses_version="v4",
+        uses=CHECKOUT_USES,
+        uses_version=CHECKOUT_VERSION,
         with_={"fetch-depth": spec.checkout_fetch_depth},
     )
     scan_step = scanners.Step(uses=spec.action_ref, env=spec.env,

@@ -47,8 +47,8 @@ class ScannerSpec:
 REGISTRY: dict[str, ScannerSpec] = {
     "gitleaks": ScannerSpec(
         id="gitleaks",
-        action_ref="gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7",
-        action_ref_version="v2",
+        action_ref="gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e",
+        action_ref_version="v3",
         checkout_fetch_depth="0",
         env={"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"},
     ),

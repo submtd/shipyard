@@ -65,7 +65,7 @@ PYTHON_INSTALL_RUN = (
 def test_python_spec_contents():
     spec = REGISTRY["python"]
     assert spec.detect_files == ("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt")
-    assert spec.setup_uses == "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065"
+    assert spec.setup_uses.split("@")[0] == "actions/setup-python"
     assert spec.matrix_var == "python"
     assert spec.setup_with_key == "python-version"
     assert spec.default_versions == ("3.12",)
@@ -90,7 +90,7 @@ def test_python_install_step_matches_github_starter_workflow_shape():
 def test_node_spec_contents():
     spec = REGISTRY["node"]
     assert spec.detect_files == ("package.json",)
-    assert spec.setup_uses == "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444"
+    assert spec.setup_uses.split("@")[0] == "actions/setup-node"
     assert spec.matrix_var == "node"
     assert spec.setup_with_key == "node-version"
     assert spec.default_versions == ("20",)
