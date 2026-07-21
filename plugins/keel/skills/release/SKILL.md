@@ -34,6 +34,12 @@ Never pick minor or major without asking.
 
 ## 3. Create the release branch
 
+`<releasePrefix>` comes from the **loaded** config, not from `.keel.json`
+directly - `prefixes` is normally absent from the file and the loader is
+what supplies the `release/` default:
+
+    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from keel.config import load_config; from pathlib import Path; c = load_config(Path('.')); print(c.release_prefix, c.integration)"
+
     git fetch origin
     git checkout -b <releasePrefix><version> origin/<integration>
 

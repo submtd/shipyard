@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `keel` now passes an explicit `--repo`/`-R` through to `gh`.
+  `Action.repo` was parsed, stored, asserted in a test, and then read by
+  nothing, so `gh pr merge 5 --repo other/org-repo` was judged against the
+  *local* checkout's PR #5 -- a different pull request, with a different
+  base and review state. The review and merge-strategy gates therefore
+  returned a confidently wrong verdict rather than an honest unknown. The
+  repository is now part of the fact cache key too, so one repo's answer
+  can't be served for another.
+- `keel`'s skills now load the config through `keel.config.load_config`
+  instead of reading `.keel.json` directly. `keel:init` writes only the
+  keys it detects, so `prefixes` and `mergeStrategy` are normally absent
+  from the file -- `start-work`, `land`, `sync` and `release` were telling
+  Claude to read fields that aren't there, leaving it to guess, and a guess
+  that disagrees with the loader's defaults produces a `merge-strategy` or
+  `pr-edge` block nobody can explain.
+
 ### Added
 
 - `bosun`, Shipyard's sixth and final core plugin: renders an

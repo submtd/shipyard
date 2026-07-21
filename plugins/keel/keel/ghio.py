@@ -54,7 +54,7 @@ def _review_state(data):
     return None
 
 
-def pr_facts(number, cwd=None):
+def pr_facts(number, cwd=None, repo=None):
     """Fetch base/head/fork/review facts for a PR in a single `gh` call.
 
     Returns None if the `gh` call itself fails (not found, timeout,
@@ -65,12 +65,17 @@ def pr_facts(number, cwd=None):
     collapse these two cases: a failed gh call must never be treated as
     a confident "no review" that blocks a merge for the wrong reason.
     """
-    key = ("pr", number, cwd)
+    # `repo` is part of the cache key, not just the argv: without it the
+    # first repository's answer would be served for the second, which is
+    # the same wrong-repo bug one layer down.
+    key = ("pr", number, cwd, repo)
     if key in _cache:
         return _cache[key]
     args = ["pr", "view"]
     if number:
         args.append(str(number))
+    if repo:
+        args += ["--repo", repo]
     args += ["--json", _PR_FIELDS]
     data = _gh_json(args, cwd=cwd)
     if data is None:
@@ -86,15 +91,19 @@ def pr_facts(number, cwd=None):
     return result
 
 
-def capability(cwd=None):
-    """Whether the current user can push/maintain this repository."""
-    key = ("cap", cwd)
+def capability(cwd=None, repo=None):
+    """Whether the current user can push/maintain the target repository."""
+    key = ("cap", cwd, repo)
     if key in _cache:
         return _cache[key]
     # NB: no `-q` here. With `-q` gh emits a bare word like `ADMIN`, which is
     # not valid JSON, so json.loads would always fail and this path would
     # silently never work. Ask for the object and read the field ourselves.
-    data = _gh_json(["repo", "view", "--json", "viewerPermission"], cwd=cwd)
+    args = ["repo", "view"]
+    if repo:
+        args.append(repo)
+    args += ["--json", "viewerPermission"]
+    data = _gh_json(args, cwd=cwd)
     # `--json viewerPermission` restricts the payload to exactly that field, so
     # this is the only shape gh can return. Anything else means the call failed.
     if isinstance(data, dict) and data.get("viewerPermission"):

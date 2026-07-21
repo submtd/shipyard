@@ -143,3 +143,74 @@ def test_every_call_passes_a_timeout(monkeypatch):
                         lambda args, **kw: seen.update(kw) or FakeProc("{}"))
     ghio.capability()
     assert "timeout" in seen and seen["timeout"] > 0
+
+
+# --- cross-repo commands -------------------------------------------------
+#
+# Action.repo was parsed from `--repo`/`-R`, stored, and then read by
+# nothing. `gh pr merge 5 --repo other/org-repo` was therefore evaluated
+# against THIS repo's PR #5 -- a different PR, possibly a different base,
+# possibly nonexistent -- so the review and merge-strategy gates produced a
+# confidently wrong answer rather than an honest unknown.
+
+
+def test_pr_facts_passes_repo_through_to_gh(monkeypatch):
+    calls = []
+
+    def fake_run(args, **kw):
+        calls.append(args)
+        return FakeProc(json.dumps({"baseRefName": "main", "headRefName": "f",
+                                    "isCrossRepository": False}))
+
+    monkeypatch.setattr(ghio.subprocess, "run", fake_run)
+    ghio.pr_facts("5", repo="other/org-repo")
+    assert "--repo" in calls[0]
+    assert calls[0][calls[0].index("--repo") + 1] == "other/org-repo"
+
+
+def test_capability_passes_repo_through_to_gh(monkeypatch):
+    # `gh repo view` takes the repository as a POSITIONAL -- there is no
+    # --repo flag on this subcommand, unlike `gh pr view`. Verified against
+    # `gh repo view --help`: "USAGE gh repo view [<repository>] [flags]".
+    calls = []
+
+    def fake_run(args, **kw):
+        calls.append(args)
+        return FakeProc(json.dumps({"viewerPermission": "ADMIN"}))
+
+    monkeypatch.setattr(ghio.subprocess, "run", fake_run)
+    ghio.capability(repo="other/org-repo")
+    assert calls[0][:3] == ["gh", "repo", "view"]
+    assert calls[0][3] == "other/org-repo"
+
+
+def test_no_repo_flag_when_repo_is_none(monkeypatch):
+    calls = []
+
+    def fake_run(args, **kw):
+        calls.append(args)
+        return FakeProc(json.dumps({"baseRefName": "main", "headRefName": "f",
+                                    "isCrossRepository": False}))
+
+    monkeypatch.setattr(ghio.subprocess, "run", fake_run)
+    ghio.pr_facts("5")
+    assert "--repo" not in calls[0]
+
+
+def test_cache_key_distinguishes_repos(monkeypatch):
+    # Without repo in the cache key, the first repo's answer would be
+    # served for the second -- the same wrong-repo bug, one layer down.
+    payloads = {
+        "a/one": {"baseRefName": "main", "headRefName": "f1",
+                  "isCrossRepository": False},
+        "b/two": {"baseRefName": "develop", "headRefName": "f2",
+                  "isCrossRepository": False},
+    }
+
+    def fake_run(args, **kw):
+        repo = args[args.index("--repo") + 1]
+        return FakeProc(json.dumps(payloads[repo]))
+
+    monkeypatch.setattr(ghio.subprocess, "run", fake_run)
+    assert ghio.pr_facts("5", repo="a/one")["head"] == "f1"
+    assert ghio.pr_facts("5", repo="b/two")["head"] == "f2"
