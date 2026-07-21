@@ -214,13 +214,14 @@ and the verification result.
 
 **Surface the gitleaks licensing caveat explicitly** — it's easy for an
 adopter to be surprised by a red job that has nothing to do with their code:
-`gitleaks/gitleaks-action` is free to use without a license for public
-repositories and for individual (non-organization) accounts on private
-repos. If this workflow is being scaffolded for a **private repository owned
-by a GitHub organization**, the gitleaks job will fail at run time unless a
-`GITLEAKS_LICENSE` secret (obtainable free from gitleaks for this case) is
-set as a repo or org secret. Tell the user this up front rather than letting
-them discover it via a failing Actions run.
+`gitleaks/gitleaks-action` requires a free `GITLEAKS_LICENSE` for repos owned
+by a GitHub **organization** account, regardless of whether the repo is
+public or private; repos owned by a **personal** account need no license. If
+this workflow is being scaffolded for a repo owned by an **organization**,
+the gitleaks job will fail at run time unless a `GITLEAKS_LICENSE` secret
+(obtainable free from gitleaks for this case) is set as a repo or org
+secret. Tell the user this up front rather than letting them discover it via
+a failing Actions run.
 
 Point the user at:
 
@@ -240,9 +241,9 @@ in this one:
 
 - scanners beyond `gitleaks` (`hull.scanners.SCANNER_IDS` has exactly one
   entry today)
-- automating the `GITLEAKS_LICENSE` secret itself (hull can only warn that a
-  private-org repo needs one; setting a repo/org secret is outside what a
-  rendered workflow file can do)
+- automating the `GITLEAKS_LICENSE` secret itself (hull can only warn that
+  an organization-owned repo needs one; setting a repo/org secret is outside
+  what a rendered workflow file can do)
 - configurable triggers (today's workflow is always
   `on: [push, pull_request]`)
 - scan-scope configuration (path allow/deny lists, custom gitleaks rules) —
