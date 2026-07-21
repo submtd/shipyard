@@ -38,12 +38,14 @@ def test_monorepo_matches_golden_byte_for_byte(tmp_path):
                     "plugins/rigging/tests",
                     "plugins/stow/tests",
                     "plugins/ballast/tests",
+                    "plugins/hull/tests",
                 ],
                 "pythonPath": [
                     "plugins/keel",
                     "plugins/rigging",
                     "plugins/stow",
                     "plugins/ballast",
+                    "plugins/hull",
                 ],
             }
         }
