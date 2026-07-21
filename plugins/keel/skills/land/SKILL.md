@@ -18,11 +18,18 @@ Confirm:
 
 ## 2. Use the configured strategy
 
-Read `mergeStrategy` from `.keel.json` (`toIntegration`, `toProduction` -
-default `squash` and `merge`, but either can be set to `squash`, `merge`, or
-`rebase`). Match the PR's base branch to the configured strategy and use that
-flag - don't assume squash-into-integration/merge-into-production if the repo
-has set something else:
+Read the merge strategy from the **loaded** config, not from the raw
+`.keel.json`:
+
+    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from keel.config import load_config; from pathlib import Path; c = load_config(Path('.')); print(c.merge_to_integration, c.merge_to_production)"
+
+`mergeStrategy` is normally **absent** from `.keel.json` - `keel:init` does
+not write it - so the raw file shows you nothing and the loader is what
+supplies the defaults (`squash` into integration, `merge` into production).
+Either can be set to `squash`, `merge`, or `rebase`. Match the PR's base
+branch to the configured strategy and use that flag - don't assume
+squash-into-integration/merge-into-production if the repo has set something
+else:
 
     gh pr merge <number> --squash --delete-branch
     gh pr merge <number> --merge

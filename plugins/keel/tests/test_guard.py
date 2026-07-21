@@ -254,3 +254,30 @@ def test_pr_create_without_changelog_reports_distinct_message(guard, monkeypatch
     reason = hso["permissionDecisionReason"]
     assert "does not exist" in reason
     assert "requireChangelog" in reason
+
+
+def test_cross_repo_merge_is_evaluated_against_the_named_repo(monkeypatch, tmp_path):
+    """`gh pr merge 5 --repo other/org-repo` must ask gh about THAT repo's
+    PR #5, not the local checkout's. Action.repo was parsed and then read by
+    nothing, so the review/merge-strategy gates silently judged the wrong
+    pull request."""
+    from keel import ghio
+    from keel.actions import classify
+
+    ghio.clear_cache()
+    seen = []
+
+    def fake_run(args, **kw):
+        seen.append(args)
+        class P:
+            stdout = '{"baseRefName":"main","headRefName":"f","isCrossRepository":false}'
+            returncode = 0
+            stderr = ""
+        return P()
+
+    monkeypatch.setattr(ghio.subprocess, "run", fake_run)
+    (action,) = classify("gh pr merge 5 --repo other/org-repo --squash")
+    assert action.repo == "other/org-repo"
+    ghio.pr_facts(action.pr_number, repo=action.repo)
+    assert any("other/org-repo" in a for a in seen[0])
+    ghio.clear_cache()
