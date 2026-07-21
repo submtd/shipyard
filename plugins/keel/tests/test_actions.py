@@ -147,3 +147,109 @@ def test_push_tag_ref_unaffected_by_normalization():
 def test_global_flags_before_subcommand_still_classify(cmd, kind, number, base):
     (a,) = classify(cmd)
     assert (a.kind, a.pr_number, a.base) == (kind, number, base)
+
+
+# --- newline-separated commands -------------------------------------------
+#
+# The Bash tool routinely sends multi-line scripts, so these are the common
+# case, not an adversarial one. _segments listed "\n" as a separator, but
+# shlex in whitespace_split mode never emits a newline token -- newline is
+# whitespace -- so a multi-line command collapsed into ONE segment whose
+# first positional was the first subcommand. Everything after it vanished:
+# classify('git status\ngit push origin main') returned [] and the guard
+# allowed a push to a protected branch it would otherwise have blocked.
+
+
+def test_newline_separates_commands():
+    actions = classify("git status\ngit push origin main")
+    assert [a.kind for a in actions] == ["push"]
+    assert actions[0].refs[0].dst == "main"
+
+
+def test_newline_separated_commit_is_seen():
+    actions = classify('git add -A\ngit commit -m "wip"')
+    assert [a.kind for a in actions] == ["commit"]
+
+
+def test_every_command_in_a_multi_line_script_is_classified():
+    actions = classify("git fetch\ngit push origin main\ngit push origin develop")
+    assert [a.refs[0].dst for a in actions] == ["main", "develop"]
+
+
+def test_blank_lines_and_indentation_do_not_produce_empty_segments():
+    actions = classify("git fetch\n\n   \n  git push origin main\n")
+    assert [a.kind for a in actions] == ["push"]
+
+
+def test_newline_inside_a_quoted_argument_does_not_split_the_command():
+    # The naive fix -- str.split("\n") before lexing -- breaks exactly here:
+    # each half lexes as unbalanced quotes and the whole command is dropped.
+    # A multi-line commit message must stay one token.
+    actions = classify('git commit -m "first line\nsecond line"')
+    assert [a.kind for a in actions] == ["commit"]
+
+
+def test_a_command_after_a_multi_line_quoted_argument_is_still_seen():
+    actions = classify('git commit -m "first\nsecond"\ngit push origin main')
+    assert [a.kind for a in actions] == ["commit", "push"]
+    assert actions[1].refs[0].dst == "main"
+
+
+def test_newline_and_operator_separators_mix():
+    actions = classify("git fetch && git push origin main\ngit push origin develop")
+    assert [a.refs[0].dst for a in actions] == ["main", "develop"]
+
+
+# --- shell comments --------------------------------------------------------
+#
+# commenters was disabled, so a trailing comment's words became positional
+# args. `git push origin feature/x  # deploy to main` parsed 'main' as a
+# refspec and the guard emitted a hard DENY citing a protected branch the
+# command never touched -- a false block with an untrue reason, which is the
+# failure mode most corrosive to an advisory hook's credibility.
+
+
+def test_a_trailing_comment_is_not_parsed_as_refspecs():
+    actions = classify("git push origin feature/x  # deploy to main")
+    assert [r.dst for r in actions[0].refs] == ["feature/x"]
+
+
+def test_a_comment_mentioning_a_protected_branch_is_ignored():
+    actions = classify("git push origin feature/x # not develop")
+    assert [r.dst for r in actions[0].refs] == ["feature/x"]
+
+
+def test_a_hash_inside_quotes_is_still_a_literal():
+    # posix shlex resolves quotes before comments, so enabling commenters
+    # must not eat a '#' the user actually meant -- e.g. an issue reference
+    # in a commit message.
+    actions = classify('git commit -m "fix #123 for real"')
+    assert [a.kind for a in actions] == ["commit"]
+
+
+def test_a_comment_does_not_swallow_a_following_line():
+    # shlex's own comment handling reads to end of line and consumes the
+    # newline with it, which would silently re-merge these two commands and
+    # lose the push. Comments are stripped by hand for exactly this reason.
+    actions = classify('git commit -m "wip" # done for now\ngit push origin main')
+    assert [a.kind for a in actions] == ["commit", "push"]
+    assert actions[1].refs[0].dst == "main"
+
+
+# --- pushes that carry no refspec but write every branch -------------------
+
+
+def test_push_all_is_flagged():
+    assert classify("git push --all origin")[0].pushes_every_branch is True
+
+
+def test_push_mirror_is_flagged():
+    assert classify("git push --mirror origin")[0].pushes_every_branch is True
+
+
+def test_an_ordinary_push_is_not_flagged():
+    assert classify("git push origin main")[0].pushes_every_branch is False
+
+
+def test_a_push_with_no_refspec_is_not_flagged():
+    assert classify("git push")[0].pushes_every_branch is False
