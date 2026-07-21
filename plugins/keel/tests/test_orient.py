@@ -128,16 +128,23 @@ def test_on_feature_branch_omits_start_work_nudge(orient, monkeypatch, capsys, t
     assert "Current branch: feature/x" in ctx
 
 
-def test_lists_all_ten_skills(orient, monkeypatch, capsys, tmp_path):
+def test_lists_all_skills(orient, monkeypatch, capsys, tmp_path):
+    # Derive the expected set from the skills directory itself, rather than
+    # a hardcoded list here, so a new skills/<name>/ dir that orient.py
+    # forgets to advertise fails this test instead of silently passing.
+    skills_dir = Path(__file__).resolve().parents[1] / "skills"
+    expected = {f"keel:{p.name}" for p in skills_dir.iterdir() if p.is_dir()}
+
     repo, _ = init_repo(tmp_path)
     (repo / ".keel.json").write_text("{}")
     exit_code, out = run_orient(orient, monkeypatch, capsys, repo)
     payload = json.loads(out)
     ctx = payload["additionalContext"]
-    for skill in ("keel:start-work", "keel:finish-work", "keel:respond-to-review",
-                  "keel:sync", "keel:review", "keel:land", "keel:release",
-                  "keel:ship", "keel:protect", "keel:doctor"):
-        assert skill in ctx
+
+    skills_line = [l for l in ctx.splitlines() if l.startswith("Skills:")][0]
+    listed = {s.strip().rstrip(".") for s in
+              skills_line[len("Skills:"):].strip().split(",")}
+    assert listed == expected
 
 
 def test_states_hook_is_advisory_and_branch_protection_is_real_boundary(orient, monkeypatch, capsys, tmp_path):

@@ -15,7 +15,7 @@ from keel.config import ConfigError, load_config  # noqa: E402
 from keel.render import _sentence                 # noqa: E402
 
 SKILLS = (
-    "keel:start-work", "keel:finish-work", "keel:respond-to-review",
+    "keel:init", "keel:start-work", "keel:finish-work", "keel:respond-to-review",
     "keel:sync", "keel:review", "keel:land", "keel:release", "keel:ship",
     "keel:protect", "keel:doctor",
 )

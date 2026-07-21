@@ -20,7 +20,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 KEEL_PKG = PLUGIN_ROOT / "keel"
 HOOKS_DIR = PLUGIN_ROOT / "hooks"
 
-PURE_MODULES = ("config", "actions", "facts", "rules", "render")
+PURE_MODULES = ("config", "actions", "facts", "rules", "render", "scaffold")
 
 FORBIDDEN_IN_PURE_MODULES = {
     "subprocess", "os",
