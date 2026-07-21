@@ -18,53 +18,6 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
-### Changed
-
-- Every GitHub Actions ref upgraded to its current major and re-pinned:
-  `actions/checkout` v4 -> v7, `actions/setup-python` v5 -> v7,
-  `actions/setup-node` v5 -> v7, `gitleaks/gitleaks-action` v2 -> v3. The
-  0.3.0 pins were faithful to what the repo had, which meant they were
-  immutable *and* several majors stale. Release notes were read for each:
-  all four are Node 20 -> Node 24 runtime moves plus ESM migrations, and
-  none of the behavioural changes (checkout v7 blocking fork checkout under
-  `pull_request_target`, setup-python v7 dropping `pip-install`,
-  setup-node v6 limiting auto-caching to npm) touch anything these
-  workflows use. The gitleaks bump is time-sensitive rather than optional:
-  GitHub removes Node 20 from hosted runners on 16 September 2026, after
-  which `gitleaks-action@v2` stops running at all.
-
-### Added
-
-- `scripts/sync_action_pins.py`, which makes Dependabot PRs landable.
-  `ci.yml` and `security.yml` are rendered from the `rigging`/`hull`
-  registries, but Dependabot edits the rendered file and leaves the
-  registry alone — so its PRs fail the byte-identity dogfood tests and can
-  never go green unaided. The script carries a bump from the artifacts back
-  into the registries and regenerates everything. Documented in the README,
-  and covered by `tests/test_sync_action_pins.py`, including the two ways
-  it got this wrong while being written (swallowing the closing quote of a
-  pinned `uses=` string, which left the registry unparseable; and letting
-  one action's version tag overwrite another's in a shared file).
-
-### Fixed
-
-- `keel:land`'s branch-deletion rule was written for gitflow and was wrong
-  under trunk. It said "do not delete the branch on a merge into
-  `production`", whose stated reason -- release branches are sometimes
-  needed again -- is about the *head*, not the base. Under trunk
-  `production` is the base for every PR, so read literally the rule made no
-  branch ever deletable and finished work branches would accumulate
-  forever. It now keys off the head branch: keep `release/*` and back-merge
-  heads, delete finished work branches. Found by following the skill on
-  this repo's own PR #14.
-- Tests no longer restate action SHAs as literals. Seven did, so a
-  legitimate upgrade meant editing seven files in lockstep — which is how
-  pins go stale. They now derive from the registries, leaving exactly one
-  place per action where a SHA is written. `hull`'s checkout pin was
-  inlined in `plan.py` where `rigging`'s was already a named constant; it
-  is now `CHECKOUT_USES`/`CHECKOUT_VERSION`, closing another copy-paste
-  divergence between the two.
-
 ## [0.3.0] - 2026-07-21
 
 First released version. The suite existed before this and was in use, but
@@ -149,6 +102,17 @@ than new capability.
   `security.yml` scans only that commit -- a repo with a secret committed
   last year gets a green check and has never been scanned.
 
+- `scripts/sync_action_pins.py`, which makes Dependabot PRs landable.
+  `ci.yml` and `security.yml` are rendered from the `rigging`/`hull`
+  registries, but Dependabot edits the rendered file and leaves the
+  registry alone — so its PRs fail the byte-identity dogfood tests and can
+  never go green unaided. The script carries a bump from the artifacts back
+  into the registries and regenerates everything. Documented in the README,
+  and covered by `tests/test_sync_action_pins.py`, including the two ways
+  it got this wrong while being written (swallowing the closing quote of a
+  pinned `uses=` string, which left the registry unparseable; and letting
+  one action's version tag overwrite another's in a shared file).
+
 ### Changed
 
 - All six plugins now reject unknown keys in their config files instead of
@@ -200,6 +164,19 @@ than new capability.
   is not prefix-strict the way gitflow is. The `changelog` gate still applies
   to all trunk work branches (previously it only applied to `feature/*`/
   `hotfix/*`, silently exempting anything else).
+
+- Every GitHub Actions ref upgraded to its current major and re-pinned:
+  `actions/checkout` v4 -> v7, `actions/setup-python` v5 -> v7,
+  `actions/setup-node` v5 -> v7, `gitleaks/gitleaks-action` v2 -> v3. The
+  0.3.0 pins were faithful to what the repo had, which meant they were
+  immutable *and* several majors stale. Release notes were read for each:
+  all four are Node 20 -> Node 24 runtime moves plus ESM migrations, and
+  none of the behavioural changes (checkout v7 blocking fork checkout under
+  `pull_request_target`, setup-python v7 dropping `pip-install`,
+  setup-node v6 limiting auto-caching to npm) touch anything these
+  workflows use. The gitleaks bump is time-sensitive rather than optional:
+  GitHub removes Node 20 from hosted runners on 16 September 2026, after
+  which `gitleaks-action@v2` stops running at all.
 
 ### Fixed
 
@@ -298,3 +275,19 @@ than new capability.
 - `CHANGELOG.md` had two `### Added` sections inside `## [Unreleased]`,
   which is malformed per Keep a Changelog and which neither the gate nor
   any test noticed. Merged.
+- `keel:land`'s branch-deletion rule was written for gitflow and was wrong
+  under trunk. It said "do not delete the branch on a merge into
+  `production`", whose stated reason -- release branches are sometimes
+  needed again -- is about the *head*, not the base. Under trunk
+  `production` is the base for every PR, so read literally the rule made no
+  branch ever deletable and finished work branches would accumulate
+  forever. It now keys off the head branch: keep `release/*` and back-merge
+  heads, delete finished work branches. Found by following the skill on
+  this repo's own PR #14.
+- Tests no longer restate action SHAs as literals. Seven did, so a
+  legitimate upgrade meant editing seven files in lockstep — which is how
+  pins go stale. They now derive from the registries, leaving exactly one
+  place per action where a SHA is written. `hull`'s checkout pin was
+  inlined in `plan.py` where `rigging`'s was already a named constant; it
+  is now `CHECKOUT_USES`/`CHECKOUT_VERSION`, closing another copy-paste
+  divergence between the two.
