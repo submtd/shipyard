@@ -10,11 +10,41 @@ one rendered GitHub Actions workflow. It does not touch branch protection,
 PR/issue templates, CODEOWNERS, or the changelog gate — that's `keel`'s job,
 not rigging's.
 
-## 1. Confirm the repo root
+## 1. Confirm the repo root and check for an existing config
 
 `git rev-parse --show-toplevel`. Do everything below relative to that path.
 
+Before proposing anything, check whether `.rigging.json` already exists and,
+if so, whether it loads:
+
+    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from rigging.config import load_config; from pathlib import Path; print(load_config(Path('.')))"
+
+(`${CLAUDE_PLUGIN_ROOT}` is this plugin's root directory; the `rigging`
+package sits at its top level.)
+
+This has three possible outcomes, and they are not the same thing:
+
+- **No `.rigging.json`** (prints `None`) — proceed with the normal
+  fresh-scaffold flow: sections 2-4 below.
+- **`.rigging.json` exists and loads** (prints a `Config(...)`) — skip
+  straight to section 5, already-configured mode. Do NOT run section 3's
+  `propose_config` in this case — it defaults `name` to `"ci"` regardless of
+  what's already on disk, and letting that default leak into this flow is
+  exactly the bug this section exists to prevent (a workflow's filename and
+  its internal `name:` disagreeing with each other).
+- **`.rigging.json` exists but raises `ConfigError`** — it's present but
+  invalid (unparseable JSON, wrong types, an unknown stack id, or a value
+  outside an allowed charset). Leave it alone, tell the user rigging is
+  misconfigured (show the `ConfigError` message verbatim — it already names
+  the field and the bad value), and stop here. Do not detect stacks, do not
+  propose a config, and do not write a workflow — there is no valid on-disk
+  config to render from, and overwriting `.rigging.json` isn't on the table
+  either; increment 1 has no repair or merge logic for it.
+
 ## 2. Detect the stack
+
+*(Fresh-scaffold flow only — you're here because section 1 found no
+`.rigging.json`.)*
 
 Call `detect_stacks`, which checks for each registered stack's marker files
 at repo root (today: `python` — `pyproject.toml`/`setup.py`/`setup.cfg`/
@@ -23,15 +53,14 @@ registry order:
 
     python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from rigging.detect import detect_stacks; from pathlib import Path; print(detect_stacks(Path('.')))"
 
-(`${CLAUDE_PLUGIN_ROOT}` is this plugin's root directory; the `rigging`
-package sits at its top level.)
-
 If this returns an empty tuple, **do not guess** — ask the user which
 stack(s) apply, from rigging's currently supported set (`python`, `node`).
 Increment 1 detects and supports only these two; if the repo is neither, say
 so plainly and stop rather than proposing a config rigging can't back.
 
 ## 3. Propose the config
+
+*(Fresh-scaffold flow only.)*
 
 Build a signals dict from what you detected and ask the user only for what
 you cannot infer:
@@ -69,7 +98,7 @@ outside its allowed charset (this is also what keeps a hostile version like
 message to the user directly rather than reinterpreting it; it already names
 the field and the bad value.
 
-## 4. Write the absent artifacts
+## 4. Write the absent artifacts (fresh-scaffold flow)
 
 Call `classify_files(root, CI_FILES(name))` — this tells you,
 deterministically, which of the two candidate paths are absent (safe to
@@ -83,29 +112,85 @@ write) and which are already present (must not be touched):
     print(json.dumps(classify_files(Path('.'), CI_FILES('ci'))))
     "
 
-(swap `'ci'` for the confirmed name.)
+(swap `'ci'` for the confirmed name.) Section 1 already established
+`.rigging.json` is absent, so it should classify as absent here too; if the
+workflow path is somehow already present anyway (e.g. hand-authored, with no
+`.rigging.json` to match it), treat it like any other present file below.
 
 For each **absent** file, write it:
 
 - `.rigging.json` — the confirmed dict, pretty-printed (`json.dumps(cfg,
-  indent=2)` plus a trailing newline).
+  indent=2)` plus a trailing newline):
+
+      python3 -c "
+      import json
+      cfg = {'name': 'ci', 'stacks': {'python': {}}}
+      open('.rigging.json', 'w').write(json.dumps(cfg, indent=2) + '\n')
+      "
+
+  (substitute the actual confirmed dict from section 3 for the `cfg` literal
+  above — the `python`/`ci` values here are illustrative, matching section
+  3's example.)
+
 - `.github/workflows/<name>.yml` — `render(build_plan(load_config(Path('.'))))`.
-  This always reads the config back off disk rather than reusing the
-  in-memory dict, so it's correct whether `.rigging.json` was just written
-  above or already existed:
+  This reads the config back off disk — which, in this flow, is the
+  `.rigging.json` you just wrote immediately above, so its `name` matches
+  the filename you're about to write to by construction:
 
       mkdir -p .github/workflows
       python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from pathlib import Path; from rigging.config import load_config; from rigging.plan import build_plan; from rigging.render import render; print(render(build_plan(load_config(Path('.')))), end='')" > .github/workflows/<name>.yml
 
 For each **present** file, do NOT overwrite. Tell the user it exists and
 offer **keep theirs** — that's the only option; increment 1 has no merge
-logic for either file (unlike keel's `CHANGELOG.md`/`.keel.json` merge). If
-`.rigging.json` is present but doesn't load (`ConfigError` from
-`rigging.config.load_config`), say so, leave it alone, and skip the workflow
-write entirely — there's no valid config on disk to render from, and
-overwriting it isn't on the table either.
+logic for either file (unlike keel's `CHANGELOG.md`/`.keel.json` merge).
 
-## 5. Verify and report
+Continue to section 6 to verify and report.
+
+## 5. Already-configured mode (`.rigging.json` present and loads)
+
+Section 1 sent you here because a valid `.rigging.json` already exists. Do
+NOT re-propose a fresh default config — the existing file on disk is the
+source of truth for `name` and `stacks` from here on. You already have it
+from section 1's `load_config` call (the printed `Config(name=..., stacks=...)`);
+call `<existing_name>` its `name` field below.
+
+Classify against that name, not a freshly-proposed one:
+
+    python3 -c "
+    import sys, json
+    sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}')
+    from pathlib import Path
+    from rigging.scaffold import CI_FILES, classify_files
+    print(json.dumps(classify_files(Path('.'), CI_FILES('<existing_name>'))))
+    "
+
+(swap `<existing_name>` for the real value.) `.rigging.json` will classify as
+**present** — leave it untouched, full stop; do not write to it in this
+flow.
+
+If `.github/workflows/<existing_name>.yml` classifies as **absent**, write it
+exactly as section 4's workflow step does, reading the config back off disk
+(the same pre-existing `.rigging.json`, unchanged), so the filename you write
+to and the workflow's internal `name:` always agree:
+
+    mkdir -p .github/workflows
+    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from pathlib import Path; from rigging.config import load_config; from rigging.plan import build_plan; from rigging.render import render; print(render(build_plan(load_config(Path('.')))), end='')" > .github/workflows/<existing_name>.yml
+
+If `.github/workflows/<existing_name>.yml` classifies as **present** too,
+there's nothing left to write — tell the user rigging is already fully
+configured for this repo and stop.
+
+If the user wants different stacks, a different name, or different versions,
+tell them to edit `.rigging.json` by hand and re-run `rigging:init` —
+increment 1 has no interactive edit path for an existing config, only
+fresh-scaffold and fill-in-the-missing-workflow.
+
+Continue to section 6 to verify and report.
+
+## 6. Verify and report
+
+*(Reached from section 4 or section 5 — section 1's invalid-config branch
+stops before ever getting here.)*
 
 Prove what you wrote works:
 
@@ -132,9 +217,6 @@ Prove what you wrote works:
       assert not bad, bad
       print('ok: no \${{ in any run block')
       "
-
-  Skip this step (and say so in the report) if `.rigging.json` was present
-  but invalid and the user chose to leave it alone in section 4.
 
 Report: what you created, what you skipped (and why), the confirmed config,
 and the verification result.
