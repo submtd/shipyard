@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 
 from rigging.config import Config, load_config
+from rigging import stacks
 from rigging.plan import build_plan
-from rigging.render import iter_run_blocks, render
+from rigging.render import iter_run_blocks, render, _step_lines
 
 try:
     import yaml as _yaml
@@ -86,7 +87,7 @@ def test_output_contains_expected_fragments():
     out = render(build_plan(cfg))
 
     assert 'runs-on: "ubuntu-latest"' in out
-    assert '"actions/checkout@v4"' in out
+    assert '"actions/checkout@11d5960a326750d5838078e36cf38b85af677262"' in out
     assert "permissions:\n  contents: read" in out
     assert 'name: "ci"' in out
 
@@ -115,7 +116,7 @@ def test_iter_run_blocks_block_scalar_ends_at_next_step():
         "      - run: |\n"
         "          line one\n"
         "          line two\n"
-        '      - uses: "actions/checkout@v4"\n'
+        '      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"\n'
     )
     assert iter_run_blocks(text) == ["line one\nline two"]
 
@@ -160,3 +161,30 @@ def test_dash_name_is_quoted_and_is_valid_yaml():
         loaded = _yaml.safe_load(out)
         assert loaded["name"] == "-"
         assert isinstance(loaded["name"], str)
+
+
+# --- SHA pins and their human-readable comment ---------------------------
+#
+# A SHA pin is unreadable on its own, so the convention (and what Dependabot
+# maintains) is a trailing `# v4` comment. It must sit OUTSIDE the quoted
+# scalar: inside, it becomes part of the ref and GitHub fails to resolve the
+# action.
+
+
+def test_version_comment_renders_outside_the_quoted_scalar():
+    step = stacks.Step(uses="actions/checkout@" + "a" * 40, uses_version="v4")
+    assert _step_lines(step) == [
+        '      - uses: "actions/checkout@' + "a" * 40 + '"  # v4'
+    ]
+
+
+def test_no_comment_when_uses_version_is_absent():
+    step = stacks.Step(uses="actions/checkout@" + "a" * 40)
+    assert _step_lines(step) == ['      - uses: "actions/checkout@' + "a" * 40 + '"']
+
+
+def test_step_name_is_rendered_rather_than_silently_dropped():
+    # `name` was declared on Step and emitted by nothing, so a registry
+    # entry written as Step(name=...) lost it with no error and no test.
+    step = stacks.Step(name="install deps", uses="actions/checkout@" + "a" * 40)
+    assert _step_lines(step)[0] == '      - name: "install deps"'

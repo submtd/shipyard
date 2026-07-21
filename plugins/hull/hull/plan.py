@@ -32,10 +32,12 @@ class ScanPlan:
 def _build_job(scanner_id: str) -> Job:
     spec = scanners.REGISTRY[scanner_id]
     checkout_step = scanners.Step(
-        uses="actions/checkout@v4",
+        uses="actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+        uses_version="v4",
         with_={"fetch-depth": spec.checkout_fetch_depth},
     )
-    scan_step = scanners.Step(uses=spec.action_ref, env=spec.env)
+    scan_step = scanners.Step(uses=spec.action_ref, env=spec.env,
+                              uses_version=spec.action_ref_version)
     return Job(
         id=spec.id,
         runs_on="ubuntu-latest",
