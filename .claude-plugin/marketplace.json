@@ -32,6 +32,12 @@
       "source": "./plugins/hull",
       "description": "Authors a secret-scanning CI workflow (gitleaks) for a repo.",
       "category": "workflow"
+    },
+    {
+      "name": "bosun",
+      "source": "./plugins/bosun",
+      "description": "Authors a Dependabot config (.github/dependabot.yml) to keep a repo's dependencies updated.",
+      "category": "workflow"
     }
   ]
 }

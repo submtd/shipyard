@@ -11,8 +11,12 @@ is its fourth: it configures the pytest runner, rendering `pytest.ini` from a
 committed `.ballast.json` via its `ballast:init` skill. **`hull`** is its
 fifth: it authors an injection-safe gitleaks secret-scan CI workflow,
 rendering `.github/workflows/security.yml` from a committed `.hull.json`
-via its `hull:init` skill. This README documents `keel`; rigging's, stow's,
-ballast's, and hull's usage live in their own `skills/init/SKILL.md`.
+via its `hull:init` skill. **`bosun`** is its sixth: it renders an
+injection-free `.github/dependabot.yml` from a committed `.bosun.json` via
+its `bosun:init` skill — keeping the suite's pinned action refs (and any
+detected pip/npm deps) current. This README documents `keel`; rigging's,
+stow's, ballast's, hull's, and bosun's usage live in their own
+`skills/init/SKILL.md`.
 
 ## Why this exists
 
@@ -301,9 +305,17 @@ runs the same way regardless of language. It's dogfooded on this repo —
 this repo's own [`security.yml`](.github/workflows/security.yml) is hull's
 rendered output from its [`.hull.json`](.hull.json).
 
-Planned: sibling Shipyard plugins for the domains keel, rigging, stow,
-ballast, and hull deliberately leave alone — dependency management
-(`bosun`/`manifest`) and debugging/profiling (`fathom`).
+`bosun` is v0.1.0 and has shipped as Shipyard's sixth plugin: it renders
+an injection-free `.github/dependabot.yml` from a committed `.bosun.json`
+via `bosun:init`. github-actions is always-on (every plugin-using repo
+pins action refs); pip/npm are added when detected. It's dogfooded on this
+repo — this repo's own [`.github/dependabot.yml`](.github/dependabot.yml)
+is bosun's rendered output from its [`.bosun.json`](.bosun.json).
+
+With `bosun` shipped, the six-plugin core suite — keel, rigging, stow,
+ballast, hull, and bosun — is complete. The only remaining sibling on the
+roadmap is `fathom` (debugging/profiling), and it is optional: nothing in
+the core suite depends on it.
 
 ## License
 
