@@ -4,13 +4,16 @@ in any repo keel:init scaffolds it into.
 
 Fails when a work-branch PR does not add content to CHANGELOG.md's Unreleased
 section, measured against the PR base. Mirrors keel's advisory hook: release
-and back-merge heads are exempt, and an indeterminate result never fails.
+and back-merge heads are exempt (except for a fork PR, whose branch NAME
+alone must never grant that exemption -- see KEEL_PR_IS_FORK below), and an
+indeterminate result never fails.
 
 Usage: check_changelog.py <base-ref> <head-ref>
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -25,7 +28,7 @@ _HEADING = re.compile(r"^(#{1,6})\s")
 def _run_git(args):
     try:
         proc = subprocess.run(["git", *args], capture_output=True, text=True,
-                              timeout=GIT_TIMEOUT, errors="replace")
+                              timeout=GIT_TIMEOUT, encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError):
         return None
     return proc.stdout if proc.returncode == 0 else None
@@ -70,9 +73,12 @@ def load_cfg(root):
         raw = {}
     branches = raw.get("branches") if isinstance(raw.get("branches"), dict) else {}
     prefixes = raw.get("prefixes") if isinstance(raw.get("prefixes"), dict) else {}
-    topology = _str_or(raw.get("topology"), "gitflow")
+    t = raw.get("topology")
+    topology = t if t in ("gitflow", "trunk") else "gitflow"
     production = _str_or(branches.get("production"), "main")
     integration = production if topology == "trunk" else _str_or(branches.get("integration"), "develop")
+    rc = raw.get("requireChangelog", True)
+    require_changelog = rc if isinstance(rc, bool) else True
     return {
         "topology": topology,
         "production": production,
@@ -80,7 +86,7 @@ def load_cfg(root):
         "feature_prefix": _str_or(prefixes.get("feature"), "feature/"),
         "release_prefix": _str_or(prefixes.get("release"), "release/"),
         "hotfix_prefix": _str_or(prefixes.get("hotfix"), "hotfix/"),
-        "require_changelog": bool(raw.get("requireChangelog", True)),
+        "require_changelog": require_changelog,
     }
 
 
@@ -109,6 +115,14 @@ def main(argv):
         return 0
 
     head_kind = kind_of_branch(head, cfg)
+    is_fork = os.environ.get("KEEL_PR_IS_FORK") == "true"
+    if is_fork and head_kind in ("production", "integration"):
+        # A fork PR's head is attacker-named; GitHub forbids same-repo
+        # head == base, so this branch is reachable only by a fork whose
+        # branch happens to be named "main"/"develop". Release/back-merge
+        # intent doesn't come from a fork -- demote to "other" so it must
+        # add a changelog entry like any other contribution.
+        head_kind = "other"
     if cfg["topology"] == "trunk":
         exempt = head_kind in ("release", "production", "integration")
     else:
@@ -137,7 +151,7 @@ def main(argv):
         print(f"::warning::could not read CHANGELOG.md at {merge_base}; "
               "skipping (unknown is not a violation)")
         return 0
-    if unreleased_body(here.read_text()) != unreleased_body(before):
+    if unreleased_body(here.read_text(encoding="utf-8", errors="replace")) != unreleased_body(before):
         print("CHANGELOG.md Unreleased section gained content — ok")
         return 0
     print("::error::the Unreleased section of CHANGELOG.md gained no content "
