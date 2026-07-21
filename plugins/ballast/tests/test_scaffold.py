@@ -135,6 +135,17 @@ def test_bad_test_path_raises_value_error_naming_field(bad_path):
         })
 
 
+def test_leading_hash_test_path_raises_value_error():
+    # propose_config reuses config._valid_path, so an iniconfig comment-char
+    # path like "#unit" must already be rejected here too -- confirming the
+    # two layers stay in lockstep.
+    with pytest.raises(ValueError, match="testPaths"):
+        propose_config({
+            "stacks": ["python"],
+            "configs": {"python": {"testPaths": ["#unit"]}},
+        })
+
+
 @pytest.mark.parametrize(
     "bad_path",
     ["my path", "/abs", "../evil"],

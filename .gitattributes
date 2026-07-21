@@ -1,0 +1,3 @@
+pytest.ini text eol=lf
+.ballast.json text eol=lf
+plugins/ballast/tests/golden/*.ini text eol=lf

@@ -107,6 +107,8 @@ def test_import_mode_outside_enum_raises(tmp_path):
     ["plugins/../evil"],
     ["my tests"],
     ["a\tb"],
+    ["#unit"],
+    [";unit"],
 ])
 def test_invalid_test_paths_raise(tmp_path, test_paths):
     with pytest.raises(ConfigError):
@@ -119,10 +121,43 @@ def test_invalid_test_paths_raise(tmp_path, test_paths):
     ["/abs"],
     ["../evil"],
     ["my path"],
+    [";src"],
+    ["#src"],
 ])
 def test_invalid_python_path_entries_raise(tmp_path, python_path):
     with pytest.raises(ConfigError):
         load_config(write(tmp_path, {"stacks": {"python": {"pythonPath": python_path}}}))
+
+
+def test_leading_hash_test_path_raises(tmp_path):
+    # iniconfig treats any line whose first non-space char is "#" as a
+    # COMMENT when parsing pytest.ini -- a testPaths entry of "#unit" would
+    # render into pytest.ini and then be silently dropped, leaving
+    # testpaths empty and pytest scanning the whole tree instead.
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {"testPaths": ["#unit"]}}}))
+    assert "#unit" in str(e.value)
+
+
+def test_leading_semicolon_python_path_raises(tmp_path):
+    # Same failure class as the leading "#" case: iniconfig also treats a
+    # leading ";" as a comment marker.
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {"pythonPath": [";src"]}}}))
+    assert ";src" in str(e.value)
+
+
+def test_hash_not_in_leading_position_is_still_accepted(tmp_path):
+    # iniconfig only treats the value as a comment when "#"/";" is the
+    # FIRST character of the (stripped) line -- a hash elsewhere in the
+    # token is not special to it, so this must remain a valid path.
+    cfg = load_config(write(tmp_path, {"stacks": {"python": {"testPaths": ["a#b"]}}}))
+    assert cfg.stacks["python"].test_paths == ("a#b",)
+
+
+def test_plain_tests_path_still_accepted(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"python": {"testPaths": ["tests"]}}}))
+    assert cfg.stacks["python"].test_paths == ("tests",)
 
 
 def test_test_paths_with_normal_relative_path_still_loads(tmp_path):

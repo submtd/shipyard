@@ -32,3 +32,20 @@ def test_rendered_testpaths_include_ballasts_own_tests():
     config = load_config(REPO)
     rendered = render(config)
     assert "plugins/ballast/tests" in rendered
+
+
+def test_rendered_testpaths_include_every_plugin():
+    # A partial plugin drop (e.g. a bad merge dropping a plugin id out of
+    # .ballast.json) would still leave .ballast.json and pytest.ini mutually
+    # consistent, and CI (plain pytest) would stay green collecting only the
+    # remaining plugins' tests. Asserting every current plugin test dir is
+    # present catches that silent narrowing here instead.
+    config = load_config(REPO)
+    rendered = render(config)
+    for plugin_tests in [
+        "plugins/keel/tests",
+        "plugins/rigging/tests",
+        "plugins/stow/tests",
+        "plugins/ballast/tests",
+    ]:
+        assert plugin_tests in rendered

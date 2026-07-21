@@ -48,7 +48,8 @@ def _valid_path_list(value, stack_id, field, *, allow_empty):
             raise ValueError(
                 f"signals['configs'][{stack_id!r}][{field!r}] entries must "
                 f"be relative path strings with no whitespace, no leading "
-                f"'/', and no '..' segment (got {entry!r})."
+                f"'/', no leading '#' or ';', and no '..' segment (got "
+                f"{entry!r})."
             )
         paths.append(entry)
     return paths

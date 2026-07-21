@@ -16,7 +16,11 @@ test-runner configuration is not implemented yet.
 
 ## 1. Confirm the repo root and check for an existing config
 
-`git rev-parse --show-toplevel`. Do everything below relative to that path.
+Run `cd "$(git rev-parse --show-toplevel)"` (or equivalent) first, and stay
+there for every command below. This plugin's one-liners use `Path('.')` and
+bare relative paths (`.ballast.json`, `pytest.ini`) throughout — those are
+only correct when the shell's cwd is the repo root, which cannot be assumed
+of the agent's starting cwd.
 
 Before proposing anything, check whether `.ballast.json` already exists and,
 if so, whether it loads:
@@ -197,25 +201,52 @@ Prove what's on disk is sound:
   whether the foreign file happens to match what ballast would have
   rendered, or diverges from it (either is fine; it's the user's file).
 
-- Run `python3 -m pytest --collect-only` (or add `-q` for quieter output).
-  **This is the step that matters most to get right**: pytest exits
-  non-zero (status 5, "no tests collected") when the configured
-  `testpaths` contain zero collectible tests — that is a *correctly
-  configured* runner reporting an *empty* suite, not a ballast failure. If
-  collection reports zero tests, warn the user plainly and explicitly:
-  ballast has configured the pytest runner correctly, but there is no test
-  for it to run yet, and an empty suite is a red CI the moment `rigging`'s
-  workflow tries to run it. Writing a starter test is the user's to do now
-  (or a later ballast increment's to scaffold) — it is out of scope for
-  `ballast:init` itself. Do not treat pytest's exit 5 here as a smoke-test
-  failure; treat it as the exact condition this step exists to catch and
-  surface.
+- Run `python3 -m pytest --collect-only` and capture **both** stdout and
+  stderr (e.g. `python3 -m pytest --collect-only 2>&1`) — the warning this
+  step checks for prints to the warnings summary, which pytest writes
+  regardless of exit code, so don't discard stderr or you'll miss it.
+  **This is the step that matters most to get right**, and its result is
+  not just "exit code zero or not" — grep the captured output for the
+  literal string `No files were found in testpaths`. That string's
+  presence, not the exit code, is what tells you which of three outcomes
+  you're in:
+
+  - **(a) Tests were collected and the warning is absent.** The runner is
+    correctly configured and collecting the intended suite. Report
+    success — this is what shipyard's own repo hits: all four plugin test
+    dirs exist, 708 tests collected, no warning.
+
+  - **(b) The warning `No files were found in testpaths; ... Searching
+    recursively from the current directory instead.` is present** —
+    regardless of exit code (pytest 8.x prints this and then falls back to
+    scanning the whole tree and exits 0, so a passing collection is *not*
+    proof of correct configuration by itself). This means the configured
+    `testPaths` in `.ballast.json` point at a path with no tests, pytest
+    is silently ignoring them, and it is instead scanning the entire repo
+    — the exact whole-tree-scan failure mode `ballast:init` exists to
+    prevent. Do **not** report success. Flag this to the user as a
+    misconfiguration: the `testPaths` value(s) need fixing (a typo'd path,
+    a directory that doesn't exist yet, etc.), not an empty-suite warning
+    to shrug off.
+
+  - **(c) Zero tests collected (exit 5) and the warning is absent.** The
+    configured `testPaths` are real but currently contain no test files.
+    This is a *correctly configured* runner reporting a genuinely *empty*
+    suite, not a ballast failure. Warn the user plainly and explicitly:
+    ballast has configured the pytest runner correctly, but there is no
+    test for it to run yet, and an empty suite is a red CI the moment
+    `rigging`'s workflow tries to run it. Writing a starter test is the
+    user's to do now (or a later ballast increment's to scaffold) — it is
+    out of scope for `ballast:init` itself. Do not treat pytest's exit 5
+    here as a smoke-test failure; treat it as the exact condition this
+    outcome exists to catch and surface.
 
 Report: what you created (`.ballast.json`, `pytest.ini`) or skipped (and
 why — a pre-existing `.ballast.json` used as-is, or a pre-existing
 `pytest.ini` left untouched), the confirmed/loaded config, the render
-comparison result, and the `--collect-only` result including the
-zero-tests warning if it applies.
+comparison result, and which of the three `--collect-only` outcomes above
+you hit (including surfacing the misconfiguration in case (b), or the
+zero-tests warning in case (c), as applicable).
 
 Point the user at:
 
