@@ -219,6 +219,57 @@ def test_free_lines_preserved_verbatim_before_between_after():
 
 
 # ---------------------------------------------------------------------------
+# blank lines outside any managed region are never touched
+#
+# apply_blocks' #1 guarantee is that lines outside any stow region are
+# emitted byte-for-byte: never reordered, deduped, dropped, or rewritten.
+# A blank-line run that sits entirely among free lines -- not adjacent to
+# any region this call adds, replaces, or removes -- is exactly such a
+# line, and must survive untouched, no matter how many consecutive blanks
+# it is.
+# ---------------------------------------------------------------------------
+
+
+def test_blank_runs_outside_regions_are_preserved_verbatim():
+    assert apply_blocks("a\n\n\n\nb\n", []) == "a\n\n\n\nb\n"
+
+
+def test_noop_apply_is_byte_for_byte_identical_to_input():
+    """A file already in canonical form -- including whatever internal
+    blank-line formatting the user chose among the free lines -- must come
+    back unchanged. This is the general form of the leading/trailing-blank
+    no-op test above: multiple blank runs, in multiple positions, all at
+    once."""
+    canonical = (
+        "\n".join(
+            [
+                "free1",
+                "",
+                "",
+                _block_text(BASE),
+                "",
+                "free2",
+                "",
+                "",
+                "",
+                _block_text(PYTHON),
+                "free3",
+            ]
+        )
+        + "\n"
+    )
+    assert apply_blocks(canonical, [BASE, PYTHON]) == canonical
+
+
+def test_idempotent_preserves_internal_blank_runs_among_free_lines():
+    existing = "a\n\n\n\nb\n" + _block_text(PYTHON) + "\n"
+    once = apply_blocks(existing, [PYTHON])
+    twice = apply_blocks(once, [PYTHON])
+    assert twice == once
+    assert "a\n\n\n\nb\n" in once
+
+
+# ---------------------------------------------------------------------------
 # idempotency
 # ---------------------------------------------------------------------------
 
@@ -561,6 +612,28 @@ def test_marker_re_rejects_non_marker_lines(line):
 
 
 # ---------------------------------------------------------------------------
+# marker regexes are newline-safe (exported for reuse by external callers,
+# who may naively .match() a raw line that still carries its trailing "\n"
+# -- e.g. read straight from a file via iteration rather than pre-split).
+# Un-anchored `$` matches just before a trailing "\n", not just at the
+# absolute end of the string, so a naive external caller could get a false
+# match. `\Z` closes that gap.
+# ---------------------------------------------------------------------------
+
+
+def test_opener_re_does_not_match_line_with_trailing_newline():
+    assert OPENER_RE.match("# >>> stow:rust >>>\n") is None
+
+
+def test_closer_re_does_not_match_line_with_trailing_newline():
+    assert CLOSER_RE.match("# <<< stow:rust <<<\n") is None
+
+
+def test_marker_re_does_not_match_line_with_trailing_newline():
+    assert MARKER_RE.match("# >>> stow:rust >>>\n") is None
+
+
+# ---------------------------------------------------------------------------
 # multi-stack composition: order, separators, trailing newline
 # ---------------------------------------------------------------------------
 
@@ -590,12 +663,18 @@ def test_single_trailing_newline():
     assert not result.endswith("\n\n")
 
 
-def test_leading_and_trailing_blank_lines_in_existing_text_are_collapsed():
+def test_leading_and_trailing_blank_lines_in_existing_text_are_preserved():
+    """Leading/trailing blank lines among free lines sit outside any
+    managed region -- stow has no business touching them. This was
+    previously named '..._are_collapsed' and asserted the opposite
+    (stripped leading/trailing blanks); that encoded a bug: a global
+    blank-run collapse pass ran unconditionally over the whole assembled
+    output, not just at the seams a splice actually creates. Since the
+    python block here is already canonical, this call is a pure no-op and
+    must return the input byte-for-byte."""
     existing = "\n\n" + _block_text(PYTHON) + "\n\n\n"
     result = apply_blocks(existing, [PYTHON])
-    assert not result.startswith("\n")
-    assert not result.endswith("\n\n")
-    assert result == _block_text(PYTHON) + "\n"
+    assert result == existing
 
 
 # ---------------------------------------------------------------------------

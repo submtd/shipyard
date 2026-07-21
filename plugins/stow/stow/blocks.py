@@ -27,15 +27,20 @@ ADVISORY = (
 _ID_PATTERN = r"[a-z0-9-]+"
 
 #: Full-line, anchored: matches only a line that is *exactly* a stow opener.
-OPENER_RE = re.compile(rf"^# >>> stow:(?P<id>{_ID_PATTERN}) >>>$")
+#: Anchored with `\Z`, not `$` -- `$` matches just before a trailing "\n",
+#: not only at the absolute end of the string, so `OPENER_RE.match(s)`
+#: would otherwise still succeed for a newline-suffixed `s` (e.g. a raw
+#: line read from a file without stripping it first). These regexes are
+#: exported for reuse by external callers, so that footgun matters.
+OPENER_RE = re.compile(rf"^# >>> stow:(?P<id>{_ID_PATTERN}) >>>\Z")
 
 #: Full-line, anchored: matches only a line that is *exactly* a stow closer.
-CLOSER_RE = re.compile(rf"^# <<< stow:(?P<id>{_ID_PATTERN}) <<<$")
+CLOSER_RE = re.compile(rf"^# <<< stow:(?P<id>{_ID_PATTERN}) <<<\Z")
 
 #: Matches any stow marker line (opener or closer), regardless of id. Used
 #: to test "is this line a stow marker at all" -- e.g. so a gitignore body
 #: line can be checked for accidentally colliding with the marker syntax.
-MARKER_RE = re.compile(rf"^# (?:>>>|<<<) stow:{_ID_PATTERN} (?:>>>|<<<)$")
+MARKER_RE = re.compile(rf"^# (?:>>>|<<<) stow:{_ID_PATTERN} (?:>>>|<<<)\Z")
 
 
 class StowError(Exception):
@@ -140,35 +145,6 @@ def _normalize_newlines(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _collapse_blank_runs(lines: list) -> list:
-    """Strip leading/trailing blank lines and collapse any internal run of
-    2+ consecutive blank lines down to exactly one.
-
-    Applied once, at the end, over the whole assembled output -- not just
-    to blank lines stow's own splicing introduced. A managed-blocks file
-    (.gitignore) has no reason to carry meaningful multi-blank-line runs or
-    leading/trailing blank lines, and normalizing them unconditionally is
-    what keeps apply_blocks idempotent without having to track provenance
-    of every blank line.
-    """
-    start = 0
-    end = len(lines)
-    while start < end and lines[start] == "":
-        start += 1
-    while end > start and lines[end - 1] == "":
-        end -= 1
-
-    collapsed: list = []
-    prev_blank = False
-    for line in lines[start:end]:
-        is_blank = line == ""
-        if is_blank and prev_blank:
-            continue
-        collapsed.append(line)
-        prev_blank = is_blank
-    return collapsed
-
-
 def apply_blocks(existing_text: str, desired_sections: list) -> str:
     """Splice `desired_sections` (an ordered list of `StackSpec`, base
     first then registry order) into `existing_text`.
@@ -180,7 +156,19 @@ def apply_blocks(existing_text: str, desired_sections: list) -> str:
     - A region whose id stow doesn't recognize is left untouched
       (forward-compat with markers a newer stow -- or a hand-edit -- put
       there).
-    - Lines outside any region are emitted verbatim, in original order.
+    - Lines outside any region -- including blank lines, blank runs, and
+      any leading/trailing blank lines -- are emitted verbatim, in
+      original order and position. Blank-line normalization happens ONLY
+      at the two seams this call can itself introduce: see the next two
+      bullets. Everywhere else, nothing about blank-line formatting is
+      touched; a no-op call (existing text already matches the desired
+      sections) returns the input byte-for-byte.
+    - When a known region is dropped (declaratively removed), if that
+      leaves a blank line immediately before the removed region directly
+      adjacent to a blank line immediately after it, that newly-adjacent
+      pair collapses to a single blank line. This is local to the removed
+      region's position -- blank runs anywhere else in the file are left
+      alone.
     - A desired section with no existing region is appended at the end, in
       canonical order, each separated from what precedes it by exactly one
       blank line.
@@ -198,19 +186,43 @@ def apply_blocks(existing_text: str, desired_sections: list) -> str:
     if malformed:
         raise StowError("; ".join(malformed))
 
-    lines = normalized.split("\n")
+    # Split into logical lines with no phantom trailing element. A
+    # trailing "\n" in normalized text (the common case) makes
+    # str.split("\n") produce a final "" that isn't a real line -- it's
+    # just how the split represents "the text ended right after a
+    # newline". Popping it here (rather than stripping trailing blanks
+    # later) is what lets a *genuine* trailing blank line survive while
+    # the single-trailing-newline guarantee is still enforced by the
+    # unconditional "+ \n" below.
+    if normalized:
+        lines = normalized.split("\n")
+        if normalized.endswith("\n"):
+            lines.pop()
+    else:
+        lines = []
+
     desired_by_id = {spec.id: spec for spec in desired_sections}
     known_ids = frozenset(STACK_IDS) | {BASE.id}
 
     out: list = []
     pos = 0
     for block_id, start, end in well_formed:
-        out.extend(lines[pos:start])
+        gap = lines[pos:start]
         if block_id in desired_by_id:
+            out.extend(gap)
             out.extend(render_block(desired_by_id[block_id]).split("\n"))
         elif block_id in known_ids:
-            pass  # known but not desired: declaratively removed
+            # known but not desired: declaratively removed. If that
+            # leaves a blank line immediately before the removed region
+            # directly touching a blank line immediately after it,
+            # collapse that newly-adjacent pair to one blank -- local to
+            # this removal, nothing else in `gap` is touched.
+            after_is_blank = end + 1 < len(lines) and lines[end + 1] == ""
+            if gap and gap[-1] == "" and after_is_blank:
+                gap = gap[:-1]
+            out.extend(gap)
         else:
+            out.extend(gap)
             out.extend(lines[start : end + 1])  # unknown id: forward-compat, untouched
         pos = end + 1
     out.extend(lines[pos:])
@@ -218,10 +230,9 @@ def apply_blocks(existing_text: str, desired_sections: list) -> str:
     present_ids = {block_id for block_id, _start, _end in well_formed}
     for spec in desired_sections:
         if spec.id not in present_ids:
-            out.append("")
+            if out and out[-1] != "":
+                out.append("")
             out.extend(render_block(spec).split("\n"))
-
-    out = _collapse_blank_runs(out)
 
     if not out:
         return ""
