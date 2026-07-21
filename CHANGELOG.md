@@ -60,6 +60,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   repository's default `GITHUB_TOKEN` scope, which is write-capable unless
   the repo says otherwise. Fixed in the `keel:init` template too, so the
   gap stops propagating into every repo keel scaffolds.
+- `ballast` could render a `pytest.ini` that stopped pytest from starting.
+  pytest shlex-splits `addopts`, `testpaths` and `pythonpath`, but
+  `PATH_RE`/`FLAG_RE` were plain `\S+` -- they excluded whitespace but not
+  quotes, so a value like `-k'foo` rendered straight through and pytest
+  died with `ValueError: No closing quotation` from inside its own config
+  layer, before collection. Both charsets now exclude quotes, backslash,
+  backtick and `$`. A new render test tokenizes every rendered value line
+  the way pytest will, which the text-comparing golden and dogfood tests
+  could not see.
+- `ballast` now rejects unknown keys in `.ballast.json` instead of silently
+  discarding them, naming the offender. The rendered file spells these
+  lowercase (`testpaths`, `pythonpath`, `addopts`), so mirroring the
+  rendered names instead of the camelCase config names was the natural
+  mistake -- and the symptom (pytest scanning the whole tree) surfaces
+  nowhere near the cause.
+- `ballast.render` now raises on a multi-stack config instead of rendering
+  the first stack and silently dropping the rest. Unreachable today, but
+  `config.py` and `scaffold.py` are both generic over `STACK_IDS`, so
+  registering a second stack would have turned this into silent data loss;
+  the docstring claimed the opposite.
+- `ballast:init`'s verification step no longer pins a hardcoded test count
+  (`708 tests`, `four plugin test dirs`) that a following agent would
+  compare against and report a false failure. It now checks the invariant:
+  every configured `testPaths` entry exists and collection is non-empty.
 
 ### Added
 

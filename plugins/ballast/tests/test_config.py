@@ -232,3 +232,88 @@ def test_valid_flag_tokens_accepted(tmp_path):
         "stacks": {"python": {"addOpts": ["-q", "--strict-markers", "--cov=x"]}}
     }))
     assert cfg.stacks["python"].add_opts == ("-q", "--strict-markers", "--cov=x")
+
+
+# --- shlex-significant characters ------------------------------------------
+#
+# pytest shlex-splits addopts, testpaths and pythonpath. An unbalanced quote
+# is therefore fatal to the whole run -- not a bad value, an unhandled
+# ValueError out of pytest's own config layer, before collection. PATH_RE and
+# FLAG_RE were plain \S+, which excluded whitespace but not quotes, so
+# ballast could render a pytest.ini that made pytest crash: the precise
+# failure ballast exists to prevent.
+
+
+@pytest.mark.parametrize("bad", ["-k'foo", '-k"foo', "--cov='x", 'a"b'])
+def test_quote_in_add_opts_raises(tmp_path, bad):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {"addOpts": [bad]}}}))
+    assert bad in str(e.value)
+
+
+@pytest.mark.parametrize("bad", ["te'sts", 'te"sts', "'tests"])
+def test_quote_in_test_path_raises(tmp_path, bad):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {"testPaths": [bad]}}}))
+    assert bad in str(e.value)
+
+
+def test_quote_in_python_path_raises(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {"pythonPath": ["sr'c"]}}}))
+    assert "sr'c" in str(e.value)
+
+
+@pytest.mark.parametrize("bad", ["a\\b", "a`b", "tests$x"])
+def test_other_shlex_significant_characters_raise(tmp_path, bad):
+    # Backslash, backtick and '$' are all shell-significant to shlex in
+    # non-posix mode or to a shell that later re-expands the value. None of
+    # them belong in a path pytest is going to tokenize.
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {"testPaths": [bad]}}}))
+    # repr, not the raw value: the message interpolates with !r, which
+    # doubles the backslash in the "a\b" case.
+    assert repr(bad) in str(e.value)
+
+
+def test_ordinary_flags_and_paths_still_accepted(tmp_path):
+    # Don't over-tighten: the common addOpts forms must keep working.
+    cfg = load_config(write(tmp_path, {"stacks": {"python": {
+        "addOpts": ["-q", "--strict-markers", "--cov=src", "-p", "no:cacheprovider"],
+        "testPaths": ["tests", "pkg/tests", "a#b", "a-b_c.d"],
+    }}}))
+    assert cfg.stacks["python"].add_opts == (
+        "-q", "--strict-markers", "--cov=src", "-p", "no:cacheprovider")
+    assert cfg.stacks["python"].test_paths == ("tests", "pkg/tests", "a#b", "a-b_c.d")
+
+
+# --- unknown keys ----------------------------------------------------------
+#
+# Silently ignoring an unknown key is the worst outcome for a config whose
+# whole job is "make pytest collect the right tests": the user believes they
+# configured something, ballast discards it, and the symptom (pytest scanning
+# the whole tree) shows up far from the cause. The rendered pytest.ini uses
+# lowercase names -- testpaths, pythonpath, addopts -- so mirroring those in
+# .ballast.json instead of the camelCase keys is the natural mistake.
+
+
+@pytest.mark.parametrize("typo", ["testPath", "testpaths", "pythonpath", "addopts",
+                                  "importmode"])
+def test_unknown_per_stack_key_raises_naming_it(tmp_path, typo):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {typo: ["tests"]}}}))
+    assert typo in str(e.value)
+
+
+def test_unknown_top_level_key_raises_naming_it(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"python": {}}, "importMode": "prepend"}))
+    assert "importMode" in str(e.value)
+
+
+def test_all_known_per_stack_keys_together_are_accepted(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"python": {
+        "testPaths": ["tests"], "pythonPath": ["src"],
+        "importMode": "prepend", "addOpts": ["-q"],
+    }}}))
+    assert cfg.stacks["python"].import_mode == "prepend"
