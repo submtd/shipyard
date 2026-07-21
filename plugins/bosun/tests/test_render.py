@@ -68,16 +68,26 @@ def test_default_interval_plan_matches_defaults_golden_byte_for_byte(tmp_path):
     assert render(plan) == read_golden("defaults.yml")
 
 
-def test_render_is_deterministic():
-    cfg = Config(
+def test_render_is_independent_of_config_key_order():
+    # The load-bearing determinism property: rendered output depends only
+    # on the canonical ecosystems.REGISTRY order that build_plan iterates,
+    # not on the insertion order of the config dict. A refactor that
+    # iterated the config dict instead of REGISTRY would break this.
+    cfg_a = Config(
         ecosystems={
             "githubActions": EcosystemConfig(interval="weekly"),
             "python": EcosystemConfig(interval="daily"),
             "node": EcosystemConfig(interval="monthly"),
         }
     )
-    plan = build_plan(cfg)
-    assert render(plan) == render(plan)
+    cfg_b = Config(
+        ecosystems={
+            "node": EcosystemConfig(interval="monthly"),
+            "python": EcosystemConfig(interval="daily"),
+            "githubActions": EcosystemConfig(interval="weekly"),
+        }
+    )
+    assert render(build_plan(cfg_a)) == render(build_plan(cfg_b))
 
 
 def test_version_is_bare_integer_not_quoted():

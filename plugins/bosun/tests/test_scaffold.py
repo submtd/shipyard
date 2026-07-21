@@ -100,6 +100,40 @@ def test_bad_interval_raises_value_error_naming_field():
         })
 
 
+def test_invalid_interval_on_non_emitted_ecosystem_still_raises():
+    # 'python' is neither always-on nor detected, so it's never emitted --
+    # but the bad interval must still be caught, per the module docstring
+    # and SKILL.md's "every signal is validated" guarantee.
+    with pytest.raises(ValueError, match="interval"):
+        propose_config({"ecosystems": [], "intervals": {"python": "hourly"}})
+
+
+def test_typo_d_intervals_key_raises_unknown_ecosystem_error():
+    # 'pyton' is not a real ecosystem id -- a typo like this must be
+    # caught loudly, not silently dropped with python falling back to its
+    # default interval.
+    with pytest.raises(ValueError, match="intervals"):
+        propose_config({"ecosystems": ["python"], "intervals": {"pyton": "daily"}})
+
+
+def test_unknown_ecosystem_key_in_intervals_raises():
+    with pytest.raises(ValueError, match="intervals"):
+        propose_config({"ecosystems": [], "intervals": {"ruby": "weekly"}})
+
+
+def test_valid_interval_on_emitted_ecosystem_still_works():
+    cfg = propose_config({
+        "ecosystems": ["python"],
+        "intervals": {"python": "daily"},
+    })
+    assert cfg == {
+        "ecosystems": {
+            "githubActions": {},
+            "python": {"interval": "daily"},
+        }
+    }
+
+
 def test_missing_ecosystems_key_raises_value_error_naming_field():
     with pytest.raises(ValueError, match="ecosystems"):
         propose_config({})

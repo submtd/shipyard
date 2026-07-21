@@ -54,6 +54,19 @@ def propose_config(signals):
             f"interval string (got {intervals_by_id!r})."
         )
 
+    for interval_id, interval in intervals_by_id.items():
+        if interval_id not in ecosystems.ECOSYSTEM_IDS:
+            raise ValueError(
+                f"signals['intervals'] contains unknown ecosystem id "
+                f"{interval_id!r}. Allowed ids: "
+                f"{', '.join(ecosystems.ECOSYSTEM_IDS)}."
+            )
+        if interval not in ecosystems.INTERVALS:
+            raise ValueError(
+                f"signals['intervals'][{interval_id!r}] must be one "
+                f"of {ecosystems.INTERVALS} (got {interval!r})."
+            )
+
     detected = set(ecosystem_ids)
     ecosystems_out = {}
     for ecosystem_id, spec in ecosystems.REGISTRY.items():
@@ -61,11 +74,6 @@ def propose_config(signals):
             continue
         interval = intervals_by_id.get(ecosystem_id)
         if interval is not None:
-            if interval not in ecosystems.INTERVALS:
-                raise ValueError(
-                    f"signals['intervals'][{ecosystem_id!r}] must be one "
-                    f"of {ecosystems.INTERVALS} (got {interval!r})."
-                )
             ecosystems_out[ecosystem_id] = {"interval": interval}
         else:
             ecosystems_out[ecosystem_id] = {}

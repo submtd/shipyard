@@ -64,15 +64,31 @@ def test_updates_is_a_tuple():
     assert isinstance(plan.updates, tuple)
 
 
-def test_build_plan_is_deterministic():
-    cfg = Config(
+def test_build_plan_is_independent_of_config_key_order():
+    # The load-bearing determinism property: build_plan iterates the
+    # canonical ecosystems.REGISTRY, not the config dict, so the result
+    # (including update order) must not depend on config key insertion
+    # order.
+    cfg_a = Config(
         ecosystems={
-            "node": EcosystemConfig(interval="weekly"),
+            "githubActions": EcosystemConfig(interval="weekly"),
             "python": EcosystemConfig(interval="daily"),
-            "githubActions": EcosystemConfig(interval="monthly"),
+            "node": EcosystemConfig(interval="monthly"),
         }
     )
-    assert build_plan(cfg) == build_plan(cfg)
+    cfg_b = Config(
+        ecosystems={
+            "node": EcosystemConfig(interval="monthly"),
+            "python": EcosystemConfig(interval="daily"),
+            "githubActions": EcosystemConfig(interval="weekly"),
+        }
+    )
+    assert build_plan(cfg_a) == build_plan(cfg_b)
+    assert [u.package_ecosystem for u in build_plan(cfg_a).updates] == [
+        "github-actions",
+        "pip",
+        "npm",
+    ]
 
 
 def test_dependabotplan_is_frozen_dataclass():
