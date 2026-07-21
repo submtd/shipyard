@@ -86,7 +86,13 @@ def _skill_files():
 
 
 SKILL_FILES = _skill_files()
-REFERENCE_RE = re.compile(r"\b(" + "|".join(_plugin_names()) + r"):([a-z0-9][a-z0-9-]*)\b")
+# Longest-first alternation so a plugin name that is a prefix of another
+# (today "keel" vs a hypothetical "keeler") cannot shadow the longer one.
+REFERENCE_RE = re.compile(
+    r"\b("
+    + "|".join(sorted(_plugin_names(), key=len, reverse=True))
+    + r"):([a-z0-9][a-z0-9-]*)\b"
+)
 
 
 @pytest.mark.parametrize("skill_path", SKILL_FILES, ids=lambda p: f"{p.parts[-4]}:{p.parts[-2]}")
@@ -130,8 +136,36 @@ def test_plugins_dir_and_marketplace_agree():
 
 
 def test_guard_scans_a_nontrivial_corpus():
+    """Anti-vacuity: a broken glob or regex must not make this module pass.
+
+    A bare ">= 1 reference" floor is worthless here -- a regex matching a
+    single literal still clears it while 60 of the 61 real references go
+    unchecked, and every other test in this module stays green. So the
+    floor is set near the real corpus, and the alternation is checked
+    structurally, which catches a broken plugin-name enumeration
+    deterministically rather than statistically.
+    """
     assert len(SKILL_FILES) >= 16, f"expected >=16 SKILL.md files, found {len(SKILL_FILES)}"
-    total_refs = sum(
-        len(REFERENCE_RE.findall(p.read_text())) for p in SKILL_FILES
+
+    # Every plugin name must survive into the compiled alternation. This is
+    # the deterministic guard: drop a name and its references stop being
+    # checked, which no count floor can reliably detect.
+    for name in _plugin_names():
+        assert name in REFERENCE_RE.pattern, (
+            f"plugin {name!r} is missing from REFERENCE_RE -- its cross-plugin "
+            f"references are silently not being checked"
+        )
+
+    matches = [m for path in SKILL_FILES for m in REFERENCE_RE.findall(path.read_text())]
+    # Verified baseline is 61 references across all 6 plugins in 14 files.
+    # The floor has headroom for ordinary prose churn but is far above what a
+    # catastrophically broken regex would yield (~0).
+    assert len(matches) >= 50, (
+        f"expected >=50 cross-plugin references, found {len(matches)} -- "
+        f"REFERENCE_RE or the skill corpus is likely broken"
     )
-    assert total_refs >= 1, "expected at least one cross-plugin skill reference"
+    referenced = {plugin for plugin, _ in matches}
+    assert len(referenced) >= 4, (
+        f"references span only {sorted(referenced)} -- expected the scan to "
+        f"reach at least 4 distinct plugins"
+    )
