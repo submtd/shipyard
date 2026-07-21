@@ -57,6 +57,19 @@ _SHLEX_SIGNIFICANT = "'\"\\`$"
 
 PATH_RE = re.compile(rf"[^\s{re.escape(_SHLEX_SIGNIFICANT)}]+")
 
+# Flags that are actively harmful in a COMMITTED pytest.ini, which every run
+# in every environment inherits. Two families:
+#   - interactive debuggers block on stdin and hang CI until it times out;
+#   - cache-dependent selection makes WHICH TESTS RUN depend on a previous
+#     local run's .pytest_cache, silently narrowing the suite.
+# Deliberately NOT denied: -s/--capture=no and -x/--exitfirst are defensible
+# standing preferences, not hostile.
+DENIED_ADD_OPTS = frozenset({
+    "--pdb", "--trace", "--pdbcls",
+    "--lf", "--last-failed", "--ff", "--failed-first",
+    "--sw", "--stepwise", "--stepwise-skip",
+})
+
 # A non-empty token with no whitespace/newline and nothing shlex-significant,
 # e.g. "-q", "--strict-markers", "--cov=x".
 FLAG_RE = re.compile(rf"[^\s{re.escape(_SHLEX_SIGNIFICANT)}]+")
@@ -133,6 +146,14 @@ def _valid_add_opts(value, stack_id) -> tuple[str, ...]:
                 f"{CONFIG_NAME}: 'stacks.{stack_id}.addOpts' entries must be "
                 f"non-empty tokens with no whitespace and no quotes or "
                 f"other shell-significant characters (got {entry!r})."
+            )
+        flag = entry.split("=", 1)[0]
+        if flag in DENIED_ADD_OPTS:
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'stacks.{stack_id}.addOpts' must not contain "
+                f"{flag!r} -- it is unsafe in a committed pytest.ini "
+                f"(interactive debuggers hang CI; cache-dependent selection "
+                f"silently narrows the suite)."
             )
         opts.append(entry)
     return tuple(opts)
