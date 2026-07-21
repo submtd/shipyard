@@ -12,9 +12,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   CODEOWNERS, the changelog CI gate, and an optional license). Absolute
   no-clobber; a top-up mode for already-managed repos. Lifecycle only — no
   language tooling.
-- CI `changelog` job that enforces keel's changelog rule server-side, built
-  on keel's own parser so the check and the in-editor hook cannot disagree.
-  Wired into `main`'s required status checks via branch protection.
+- CI `changelog` job that enforces keel's changelog rule server-side. The
+  script is self-contained (stdlib only, no `keel` import) so the same
+  script keel:init scaffolds into a repo can run there unmodified; a
+  drift-guard test keeps it byte-identical to the shipped template. It
+  mirrors the advisory hook's policy (release/back-merge exemptions;
+  unknown never blocks). Wired into `main`'s required status checks via
+  branch protection.
 
 ### Changed
 

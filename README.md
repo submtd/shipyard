@@ -226,15 +226,17 @@ plugins/keel/
 │   ├── actions.py   command string -> [Action]    │ pure: no subprocess,
 │   ├── facts.py     tri-state facts               │ no I/O, no globals
 │   ├── rules.py     (action, facts, config) -> Verdict
-│   └── render.py    Verdict -> hook JSON          ┘
+│   ├── render.py    Verdict -> hook JSON
+│   └── scaffold.py  init helpers (pure)           ┘
 │   ├── gitio.py     all git subprocess calls      ┐ all I/O, every call
 │   └── ghio.py      all gh subprocess calls       ┘ timed out
 ├── hooks/
 │   ├── guard.py     PreToolUse entrypoint
 │   ├── orient.py    SessionStart entrypoint
 │   └── hooks.json   hook registration
-├── skills/          the ten skills
-└── tests/           163 tests
+├── skills/          the eleven skills
+├── templates/       init's canonical scaffolded artifacts
+└── tests/           the test suite
 ```
 
 Rules key on `(action, base, head, headIsFork, capability)`. There is
@@ -258,13 +260,15 @@ CI runs the suite on Python 3.9 and 3.12.
 
 ## Status
 
-`keel` is v0.1.0 and covers the git lifecycle. Planned next:
+`keel` is v0.2.0 and covers the git lifecycle. `keel:init` has shipped —
+it scaffolds keel's lifecycle artifacts (`.keel.json`, a changelog,
+PR/issue templates, CODEOWNERS, the changelog CI gate, and an optional
+license) into a repo.
 
-- **`keel:init`** — scaffold `.keel.json`, `.github/` templates, CODEOWNERS,
-  and a changelog CI check into an existing repo.
-- Sibling Shipyard plugins for the domains keel deliberately leaves alone:
-  CI/CD pipeline authoring, dependency management, testing, and security
-  scanning.
+Planned: sibling Shipyard plugins for the domains keel deliberately leaves
+alone — CI pipeline authoring (`rigging`), dependency management (`bosun`/
+`manifest`), test tooling (`ballast`), security scanning (`hull`), and
+debugging/profiling (`fathom`).
 
 ## License
 
