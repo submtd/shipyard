@@ -18,6 +18,14 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-21
+
+Minor: additions only. One caveat worth stating plainly -- ballast's new
+`addOpts` denylist will make an existing `.ballast.json` that sets `--pdb`,
+`--lf` or a sibling start failing to load. That is the point of the change,
+but it is a config that used to work and now does not, so it is called out
+here rather than left to be discovered.
+
 ### Added
 
 - A repo-wide skill-integrity guard (`plugins/keel/tests/test_skill_integrity.py`)
