@@ -1,0 +1,147 @@
+import itertools
+import json
+
+import pytest
+
+from bosun.config import load_config
+from bosun.ecosystems import ECOSYSTEM_IDS, INTERVALS
+from bosun.scaffold import DEPENDABOT_FILES, classify_files, propose_config
+
+# Ecosystem ids that detect_ecosystems can ever surface (always-off only --
+# githubActions is never detected, it's the always-on one propose_config
+# adds itself).
+DETECTABLE_IDS = tuple(i for i in ECOSYSTEM_IDS if i != "githubActions")
+
+
+def _all_subsets_incl_empty(ids):
+    for r in range(0, len(ids) + 1):
+        for combo in itertools.combinations(ids, r):
+            yield combo
+
+
+ALL_SUBSETS = list(_all_subsets_incl_empty(DETECTABLE_IDS))
+
+
+def test_no_detected_ecosystems_still_proposes_github_actions():
+    cfg = propose_config({"ecosystems": []})
+    assert cfg == {"ecosystems": {"githubActions": {}}}
+
+
+def test_no_detected_ecosystems_round_trips_through_load_config(tmp_path):
+    cfg = propose_config({"ecosystems": []})
+    (tmp_path / ".bosun.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)
+    assert loaded is not None
+    assert set(loaded.ecosystems.keys()) == {"githubActions"}
+
+
+def test_detected_python_includes_both_github_actions_and_python():
+    cfg = propose_config({"ecosystems": ["python"]})
+    assert cfg == {"ecosystems": {"githubActions": {}, "python": {}}}
+
+
+@pytest.mark.parametrize("subset", ALL_SUBSETS, ids=lambda s: "-".join(s) or "none")
+def test_every_subset_round_trips_through_load_config(tmp_path, subset):
+    # The one non-negotiable guarantee: init can never write a .bosun.json
+    # that bosun itself would reject, and githubActions is always present
+    # even when nothing was detected.
+    cfg = propose_config({"ecosystems": list(subset)})
+    (tmp_path / ".bosun.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)
+    assert loaded is not None
+    assert set(loaded.ecosystems.keys()) == {"githubActions", *subset}
+    for ecosystem_id in loaded.ecosystems:
+        assert loaded.ecosystems[ecosystem_id].interval == "weekly"
+
+
+def test_explicit_interval_flows_through(tmp_path):
+    cfg = propose_config({
+        "ecosystems": ["python"],
+        "intervals": {"python": "monthly"},
+    })
+    assert cfg["ecosystems"]["python"] == {"interval": "monthly"}
+    assert cfg["ecosystems"]["githubActions"] == {}
+    (tmp_path / ".bosun.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)
+    assert loaded.ecosystems["python"].interval == "monthly"
+    assert loaded.ecosystems["githubActions"].interval == "weekly"
+
+
+def test_explicit_interval_on_always_on_ecosystem_flows_through(tmp_path):
+    cfg = propose_config({
+        "ecosystems": [],
+        "intervals": {"githubActions": "daily"},
+    })
+    assert cfg == {"ecosystems": {"githubActions": {"interval": "daily"}}}
+    (tmp_path / ".bosun.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)
+    assert loaded.ecosystems["githubActions"].interval == "daily"
+
+
+@pytest.mark.parametrize("interval", INTERVALS)
+def test_every_valid_interval_accepted(interval):
+    cfg = propose_config({
+        "ecosystems": ["python"],
+        "intervals": {"python": interval},
+    })
+    assert cfg["ecosystems"]["python"] == {"interval": interval}
+
+
+def test_unknown_ecosystem_id_raises_value_error_naming_field():
+    with pytest.raises(ValueError, match="ecosystems"):
+        propose_config({"ecosystems": ["ruby"]})
+
+
+def test_bad_interval_raises_value_error_naming_field():
+    with pytest.raises(ValueError, match="interval"):
+        propose_config({
+            "ecosystems": ["python"],
+            "intervals": {"python": "hourly"},
+        })
+
+
+def test_missing_ecosystems_key_raises_value_error_naming_field():
+    with pytest.raises(ValueError, match="ecosystems"):
+        propose_config({})
+
+
+def test_ecosystems_not_a_list_raises_value_error_naming_field():
+    with pytest.raises(ValueError, match="ecosystems"):
+        propose_config({"ecosystems": "python"})
+
+
+def test_intervals_not_a_dict_raises_value_error_naming_field():
+    with pytest.raises(ValueError, match="intervals"):
+        propose_config({"ecosystems": ["python"], "intervals": ["monthly"]})
+
+
+def test_dependabot_files_returns_expected_paths():
+    assert DEPENDABOT_FILES() == [".bosun.json", ".github/dependabot.yml"]
+
+
+def test_classify_files_absent_and_present(tmp_path):
+    (tmp_path / ".bosun.json").write_text("{}")
+    result = classify_files(tmp_path, DEPENDABOT_FILES())
+    assert result == {
+        ".bosun.json": "present",
+        ".github/dependabot.yml": "absent",
+    }
+
+
+def test_classify_files_handles_nested_dependabot_path(tmp_path):
+    github_dir = tmp_path / ".github"
+    github_dir.mkdir()
+    (github_dir / "dependabot.yml").write_text("version: 2\n")
+    result = classify_files(tmp_path, DEPENDABOT_FILES())
+    assert result == {
+        ".bosun.json": "absent",
+        ".github/dependabot.yml": "present",
+    }
+
+
+def test_classify_files_both_absent(tmp_path):
+    result = classify_files(tmp_path, DEPENDABOT_FILES())
+    assert result == {
+        ".bosun.json": "absent",
+        ".github/dependabot.yml": "absent",
+    }
