@@ -399,6 +399,38 @@ def test_both_start_and_end_boundary_removal_in_one_call():
 
 
 # ---------------------------------------------------------------------------
+# boundary removal only collapses the ONE separator blank -- pins the
+# actual contract (see apply_blocks' docstring): when two or more blank
+# lines separated the removed boundary block from its neighbor, only the
+# single separator blank is collapsed. Any additional blank lines are user
+# content and are preserved, so the file can still start or end with a
+# user-authored blank line after a boundary removal.
+# ---------------------------------------------------------------------------
+
+
+def test_start_of_file_removal_with_two_blanks_leaves_exactly_one():
+    # node is at the head, separated from base by TWO blank lines. Only
+    # one of those is the separator; the other is user content and must
+    # survive -- the result is neither zero blanks (over-collapse) nor two
+    # (no collapse at all).
+    existing = _block_text(NODE) + "\n\n\n" + _block_text(BASE) + "\n"
+    result = apply_blocks(existing, [BASE])
+    expected = "\n" + _block_text(BASE) + "\n"
+    assert result == expected
+    assert apply_blocks(result, [BASE]) == result  # idempotent
+
+
+def test_end_of_file_removal_with_two_blanks_leaves_exactly_one():
+    # node is at the end, separated from free1 by TWO blank lines. Only
+    # one collapses; the other is preserved as trailing user content.
+    existing = "free1\n\n\n" + _block_text(NODE) + "\n"
+    result = apply_blocks(existing, [])
+    expected = "free1\n\n"
+    assert result == expected
+    assert apply_blocks(result, []) == result  # idempotent
+
+
+# ---------------------------------------------------------------------------
 # unknown-id regions
 # ---------------------------------------------------------------------------
 

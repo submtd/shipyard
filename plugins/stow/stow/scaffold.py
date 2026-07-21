@@ -44,10 +44,12 @@ def propose_config(signals):
 
 def desired_sections(config):
     """Return the ordered list of StackSpec sections a config wants:
-    BASE first, then each registry spec in the order `config.stacks`
-    iterates (registry order for a normally-loaded config, since
-    config.load_config preserves JSON key order)."""
-    return [BASE] + [REGISTRY[stack_id] for stack_id in config.stacks]
+    BASE first, then each registry spec present in `config.stacks`, in
+    REGISTRY order. Block order is therefore canonical -- independent of
+    whatever key order the .stow.json happens to use."""
+    return [BASE] + [
+        REGISTRY[stack_id] for stack_id in STACK_IDS if stack_id in config.stacks
+    ]
 
 
 def classify_files(root, candidates):

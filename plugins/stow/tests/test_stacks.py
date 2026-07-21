@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import re
-
 import pytest
 
+from stow.blocks import CLOSER_RE, OPENER_RE, find_blocks, render_block
 from stow.stacks import BASE, REGISTRY, STACK_IDS, StackSpec
-
-# Inlined for now -- blocks.py (the block parser) doesn't exist yet. A later
-# task will import this regex from stow.blocks and dedupe this copy.
-MARKER_RE = re.compile(r"^# (>>>|<<<) stow:")
 
 
 def test_stow_version():
@@ -113,8 +108,23 @@ def test_gitignore_lines_have_no_newlines(spec: StackSpec):
 @pytest.mark.parametrize("spec", ALL_SPECS, ids=lambda s: s.id)
 def test_gitignore_lines_do_not_collide_with_stow_marker(spec: StackSpec):
     """Parser integrity: a gitignore body line must never match stow's own
-    block marker pattern, or emitting it would corrupt the managed block
-    it lives in.
+    block marker patterns, or emitting it would corrupt the managed block
+    it lives in. Uses blocks.py's actual parser regexes (OPENER_RE /
+    CLOSER_RE) -- the same `.match()` semantics the real parser uses in
+    `find_blocks` -- as the single source of truth, rather than a
+    hand-maintained copy that could silently drift from the real parser.
     """
     for line in spec.gitignore:
-        assert not MARKER_RE.match(line)
+        assert not OPENER_RE.match(line)
+        assert not CLOSER_RE.match(line)
+
+
+@pytest.mark.parametrize("spec", ALL_SPECS, ids=lambda s: s.id)
+def test_render_block_round_trips_through_find_blocks(spec: StackSpec):
+    """Parser integrity, the other direction: every registry spec must
+    render to exactly one well-formed, parseable block, with no malformed
+    markers -- catching a bad spec.id or a body line that breaks the
+    parser despite passing the line-level checks above."""
+    well_formed, malformed = find_blocks(render_block(spec))
+    assert well_formed == [(spec.id, 0, len(spec.gitignore) + 2)]
+    assert malformed == []

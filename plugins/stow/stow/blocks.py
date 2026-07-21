@@ -174,8 +174,13 @@ def apply_blocks(existing_text: str, desired_sections: list) -> str:
       blank from the gap that follows it; a removed region with nothing
       following it to end of file (nothing after it, or only blank
       lines) drops a single trailing blank from the gap that precedes
-      it. Either way, removing a block never leaves a stray orphan blank
-      at the start or end of the file.
+      it. Either way, only the ONE separator blank immediately adjacent
+      to the removed region is collapsed -- never the whole run. If two
+      or more blank lines separated the removed block from its
+      neighbor, one of them was the separator and the rest were user
+      content: after collapsing the separator, exactly one blank
+      remains, so a file can still begin or end with a user-authored
+      blank line after a boundary removal.
     - A desired section with no existing region is appended at the end, in
       canonical order, each separated from what precedes it by at least
       one blank line -- never doubled. If the free content immediately

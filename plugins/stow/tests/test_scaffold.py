@@ -72,11 +72,15 @@ def test_desired_sections_base_only_for_empty_config(tmp_path):
 
 
 def test_desired_sections_returns_base_first_then_registry_order(tmp_path):
+    # Keys are written in NON-registry order (node before python) so that
+    # asserting registry order below actually proves composition ignores
+    # .stow.json key order -- a config-key-order implementation would
+    # produce [BASE, node, python] here, not [BASE, python, node].
     (tmp_path / ".stow.json").write_text(
         json.dumps({"stacks": {"node": {}, "python": {}}})
     )
     config = load_config(tmp_path)
-    assert desired_sections(config) == [BASE, REGISTRY["node"], REGISTRY["python"]]
+    assert desired_sections(config) == [BASE, REGISTRY["python"], REGISTRY["node"]]
 
 
 def test_desired_sections_follows_config_key_order():
