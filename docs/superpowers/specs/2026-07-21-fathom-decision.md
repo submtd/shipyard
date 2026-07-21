@@ -148,10 +148,20 @@ Two real findings, both shipped in this increment:
    **rot guard**, and its honest value is coverage, not repair.
 
 2. **A `ballast` `addOpts` denylist.** `ballast`'s flag validator accepts any
-   `\S+`, so `--pdb`, `-s`, or `--sw` can be written into `.ballast.json` and
-   rendered into the *committed* `pytest.ini` — which would hang or break CI on
-   the first failure. Interactive/CI-hostile flags are now rejected at config
-   load with a `ConfigError` naming the flag.
+   `\S+`, so `--pdb` or `--sw` can be written into `.ballast.json` and rendered
+   into the *committed* `pytest.ini`. Two families are actively harmful there
+   and are now rejected at config load with a `ConfigError` naming the flag:
+
+   - **Interactive debuggers** (`--pdb`, `--trace`, `--pdbcls`) — block on stdin
+     and hang CI until it times out.
+   - **Cache-dependent selection** (`--lf`, `--last-failed`, `--ff`,
+     `--failed-first`, `--sw`, `--stepwise`, `--stepwise-skip`) — make *which
+     tests run* depend on a previous local run's `.pytest_cache`, silently
+     narrowing the suite.
+
+   Deliberately **not** denied: `-s`/`--capture=no` and `-x`/`--exitfirst`.
+   Both are defensible standing preferences, not hostile — denying them would be
+   overreach.
 
 Note the pleasing symmetry of the second finding: the one place debugging flags
 genuinely intersect this suite, the correct move was to **forbid** them in a
