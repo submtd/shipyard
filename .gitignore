@@ -1,5 +1,20 @@
 .superpowers/
+
+# >>> stow:base >>>
+# managed by stow — edits inside this block are overwritten; put custom entries outside it
+.DS_Store
+Thumbs.db
+# <<< stow:base <<<
+
+# >>> stow:python >>>
+# managed by stow — edits inside this block are overwritten; put custom entries outside it
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
-.DS_Store
+.mypy_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+# <<< stow:python <<<

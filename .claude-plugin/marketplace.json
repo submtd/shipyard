@@ -14,6 +14,12 @@
       "source": "./plugins/rigging",
       "description": "Authors CI pipelines: detects a repo's stack and scaffolds a safe GitHub Actions workflow.",
       "category": "workflow"
+    },
+    {
+      "name": "stow",
+      "source": "./plugins/stow",
+      "description": "Outfits a repo's baseline files: manages .gitignore per detected stack, updatable in place without clobbering user lines.",
+      "category": "workflow"
     }
   ]
 }

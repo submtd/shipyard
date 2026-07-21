@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `stow`, Shipyard's third plugin: manages `.gitignore` sections per
+  detected stack via a managed-block splice -- idempotent, updatable in
+  place, and it never clobbers user-custom lines. Ships `base`/`python`/
+  `node` sections. Dogfooded on shipyard's own `.gitignore`.
 - `rigging`, Shipyard's second plugin: CI pipeline authoring. Detects a
   repo's stack (`python`, `node`) and scaffolds an injection-safe GitHub
   Actions test workflow with absolute no-clobber. Dogfooded to generate

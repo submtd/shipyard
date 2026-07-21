@@ -4,7 +4,10 @@ Shipyard is a suite of Claude Code plugins for project tooling. **`keel`** is
 its first member: it owns a project's git lifecycle — how work starts, how it
 lands, and how it ships. **`rigging`** is its second: it detects a repo's
 stack and scaffolds a safe GitHub Actions CI workflow, via its `rigging:init`
-skill. This README documents `keel`; rigging's usage lives in its
+skill. **`stow`** is its third: it manages a repo's baseline files —
+`.gitignore` sections per detected stack — via its `stow:init` skill, keeping
+them updatable in place without clobbering hand-written lines. This README
+documents `keel`; rigging's and stow's usage live in their own
 `skills/init/SKILL.md`.
 
 ## Why this exists
@@ -273,7 +276,14 @@ authoring for `python` and `node` repos, via `rigging:init`. It's dogfooded
 on this repo — this repo's own [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 is rendered by rigging from its [`.rigging.json`](.rigging.json).
 
-Planned: sibling Shipyard plugins for the domains keel and rigging
+`stow` is v0.1.0 and has shipped as Shipyard's third plugin: it manages
+`.gitignore` sections per detected stack (`base`/`python`/`node`) via a
+managed-block splice — idempotent, updatable in place, and it never
+clobbers user-custom lines — via `stow:init`. It's dogfooded on this repo —
+this repo's own [`.gitignore`](.gitignore) is stow's rendered output from
+its [`.stow.json`](.stow.json).
+
+Planned: sibling Shipyard plugins for the domains keel, rigging, and stow
 deliberately leave alone — dependency management (`bosun`/`manifest`), test
 tooling (`ballast`), security scanning (`hull`), and debugging/profiling
 (`fathom`).
