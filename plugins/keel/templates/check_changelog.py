@@ -116,14 +116,16 @@ def main(argv):
 
     head_kind = kind_of_branch(head, cfg)
     is_fork = os.environ.get("KEEL_PR_IS_FORK") == "true"
-    if is_fork and head_kind in ("production", "integration"):
-        # A fork PR's head is attacker-named; GitHub forbids same-repo
-        # head == base, so this branch is reachable only by a fork whose
-        # branch happens to be named "main"/"develop". Release/back-merge
-        # intent doesn't come from a fork -- demote to "other" so it must
-        # add a changelog entry like any other contribution.
-        head_kind = "other"
-    if cfg["topology"] == "trunk":
+    if is_fork:
+        # A fork PR's head branch name is contributor-controlled, and the
+        # only exemptions (release / back-merge) are internal same-repo flows
+        # a fork can't legitimately perform. So a fork is never exempt by
+        # branch name -- it must add a changelog entry like any outside
+        # contribution. (GitHub forbids same-repo head==base, so a fork
+        # branch named "main"/"develop"/"release/*" was the only way these
+        # name-based exemptions were ever reachable in CI.)
+        exempt = False
+    elif cfg["topology"] == "trunk":
         exempt = head_kind in ("release", "production", "integration")
     else:
         exempt = head_kind not in ("feature", "hotfix")

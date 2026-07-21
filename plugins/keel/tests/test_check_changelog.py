@@ -297,3 +297,101 @@ def test_main_same_repo_head_named_main_still_exempt_under_trunk(tmp_path, monke
     # path, where no CI env is present).
     rc = cc.main(["prog", "main", "main"])
     assert rc == 0
+
+
+# --- fork never exempt: release/* prefix bypass (FIX 7) -----------------
+
+def test_main_fork_headed_release_not_exempt_under_trunk(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".keel.json").write_text(json.dumps({"topology": "trunk"}))
+    changelog = "# Changelog\n\n## [Unreleased]\n\n### Added\n- same thing\n"
+    (tmp_path / "CHANGELOG.md").write_text(changelog)
+    monkeypatch.setenv("KEEL_PR_IS_FORK", "true")
+
+    def fake_run_git(args):
+        if args[:1] == ["merge-base"]:
+            return "abc123\n"
+        if args[:1] == ["show"]:
+            return changelog
+        return None
+
+    monkeypatch.setattr(cc, "_run_git", fake_run_git)
+    rc = cc.main(["prog", "main", "release/1.0"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "::error::" in out
+
+
+def test_main_fork_headed_release_not_exempt_under_gitflow(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    # No .keel.json -- defaults to gitflow topology.
+    changelog = "# Changelog\n\n## [Unreleased]\n\n### Added\n- same thing\n"
+    (tmp_path / "CHANGELOG.md").write_text(changelog)
+    monkeypatch.setenv("KEEL_PR_IS_FORK", "true")
+
+    def fake_run_git(args):
+        if args[:1] == ["merge-base"]:
+            return "abc123\n"
+        if args[:1] == ["show"]:
+            return changelog
+        return None
+
+    monkeypatch.setattr(cc, "_run_git", fake_run_git)
+    rc = cc.main(["prog", "main", "release/1.0"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "::error::" in out
+
+
+def test_main_fork_headed_develop_not_exempt_under_gitflow(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    # No .keel.json -- defaults to gitflow topology, integration == "develop".
+    changelog = "# Changelog\n\n## [Unreleased]\n\n### Added\n- same thing\n"
+    (tmp_path / "CHANGELOG.md").write_text(changelog)
+    monkeypatch.setenv("KEEL_PR_IS_FORK", "true")
+
+    def fake_run_git(args):
+        if args[:1] == ["merge-base"]:
+            return "abc123\n"
+        if args[:1] == ["show"]:
+            return changelog
+        return None
+
+    monkeypatch.setattr(cc, "_run_git", fake_run_git)
+    rc = cc.main(["prog", "main", "develop"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "::error::" in out
+
+
+def test_main_fork_headed_main_not_exempt_under_gitflow(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    # No .keel.json -- defaults to gitflow topology, production == "main".
+    changelog = "# Changelog\n\n## [Unreleased]\n\n### Added\n- same thing\n"
+    (tmp_path / "CHANGELOG.md").write_text(changelog)
+    monkeypatch.setenv("KEEL_PR_IS_FORK", "true")
+
+    def fake_run_git(args):
+        if args[:1] == ["merge-base"]:
+            return "abc123\n"
+        if args[:1] == ["show"]:
+            return changelog
+        return None
+
+    monkeypatch.setattr(cc, "_run_git", fake_run_git)
+    rc = cc.main(["prog", "main", "main"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "::error::" in out
+
+
+def test_main_same_repo_head_named_release_still_exempt_under_trunk(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".keel.json").write_text(json.dumps({"topology": "trunk"}))
+    (tmp_path / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n")
+    # No KEEL_PR_IS_FORK set -- same-repo behavior must be unchanged: a
+    # legitimate internal release/* PR is still exempt under trunk.
+    rc = cc.main(["prog", "main", "release/1.0"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "exempt" in out
