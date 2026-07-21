@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from hull.config import Config
-from hull.plan import Job, ScanPlan, build_plan
+from hull.plan import CHECKOUT_USES, CHECKOUT_VERSION, Job, ScanPlan, build_plan
 from hull.scanners import REGISTRY, Step
 
 
@@ -38,8 +38,8 @@ def test_job_steps_are_checkout_then_scanner_in_order():
     spec = REGISTRY["gitleaks"]
 
     assert job.steps == (
-        Step(uses="actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-             uses_version="v4", with_={"fetch-depth": "0"}),
+        Step(uses=CHECKOUT_USES, uses_version=CHECKOUT_VERSION,
+             with_={"fetch-depth": "0"}),
         Step(uses=spec.action_ref, env=spec.env,
              uses_version=spec.action_ref_version),
     )

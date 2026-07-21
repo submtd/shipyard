@@ -48,8 +48,13 @@ def test_every_registry_action_ref_is_a_sha_pin():
         assert _SHA_PINNED_REF_RE.fullmatch(spec.action_ref), spec.action_ref
 
 
-def test_gitleaks_action_ref_value():
-    assert REGISTRY["gitleaks"].action_ref == "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7"
+def test_gitleaks_action_ref_names_the_right_action():
+    # The exact SHA is deliberately NOT restated here. It is asserted to be
+    # a SHA pin above, and its exact value is pinned byte-for-byte by the
+    # golden and dogfood tests -- restating it a third time bought no
+    # safety and made every legitimate upgrade a multi-file edit, which is
+    # how pins go stale.
+    assert REGISTRY["gitleaks"].action_ref.split("@")[0] == "gitleaks/gitleaks-action"
 
 
 def test_gitleaks_checkout_fetch_depth():
@@ -90,13 +95,13 @@ def test_step_is_frozen_dataclass():
 def test_step_has_name_uses_with_run_env_fields():
     step = Step(
         name="Scan",
-        uses="gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7",
+        uses="owner/action@" + "a" * 40,
         with_={"key": "value"},
         run=None,
         env={"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"},
     )
     assert step.name == "Scan"
-    assert step.uses == "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7"
+    assert step.uses == "owner/action@" + "a" * 40
     assert step.with_ == {"key": "value"}
     assert step.run is None
     assert step.env == {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}

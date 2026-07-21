@@ -3,7 +3,7 @@ from pathlib import Path
 
 from rigging.config import Config, load_config
 from rigging import stacks
-from rigging.plan import build_plan
+from rigging.plan import CHECKOUT_STEP, build_plan
 from rigging.render import iter_run_blocks, render, _step_lines
 
 try:
@@ -87,7 +87,7 @@ def test_output_contains_expected_fragments():
     out = render(build_plan(cfg))
 
     assert 'runs-on: "ubuntu-latest"' in out
-    assert '"actions/checkout@11d5960a326750d5838078e36cf38b85af677262"' in out
+    assert f'"{CHECKOUT_STEP.uses}"' in out
     assert "permissions:\n  contents: read" in out
     assert 'name: "ci"' in out
 
@@ -116,7 +116,7 @@ def test_iter_run_blocks_block_scalar_ends_at_next_step():
         "      - run: |\n"
         "          line one\n"
         "          line two\n"
-        '      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"\n'
+        f'      - uses: "{CHECKOUT_STEP.uses}"  # {CHECKOUT_STEP.uses_version}\n'
     )
     assert iter_run_blocks(text) == ["line one\nline two"]
 

@@ -272,6 +272,36 @@ python3 -m pytest -q
 
 CI runs the suite on Python 3.9 and 3.12.
 
+### The workflows are generated — including their action pins
+
+`.github/workflows/ci.yml` and `security.yml` are **rendered output**. Do
+not edit them by hand; edit the registry that renders them and regenerate:
+
+| Action | Authored in |
+|---|---|
+| `actions/checkout` | `plugins/rigging/rigging/plan.py`, `plugins/hull/hull/plan.py` |
+| `actions/setup-python`, `actions/setup-node` | `plugins/rigging/rigging/stacks.py` |
+| `gitleaks/gitleaks-action` | `plugins/hull/hull/scanners.py` |
+
+Every ref is pinned to a full commit SHA with a trailing `# v7`-style
+comment. The SHA is the pin; the comment is for humans and for Dependabot.
+
+Dependabot doesn't know these files are generated — it edits the rendered
+workflow and leaves the registry alone, which fails the byte-identity
+dogfood tests, so **its PRs can never go green on their own**. That is the
+guarantee working, not a bug. To land one:
+
+```
+git checkout dependabot/...
+python3 scripts/sync_action_pins.py     # carries the bump into the registries
+python3 -m pytest -q
+git commit -am "chore(deps): sync action pins into the registries"
+```
+
+The changelog gate also applies to `dependabot/*` branches (they classify
+as `other` under trunk), so such a PR needs a `CHANGELOG.md` entry like any
+other change.
+
 ## Status
 
 `keel` is v0.3.0 and covers the git lifecycle. `keel:init` has shipped —

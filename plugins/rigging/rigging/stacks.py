@@ -45,8 +45,8 @@ REGISTRY: dict[str, StackSpec] = {
     "python": StackSpec(
         id="python",
         detect_files=("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"),
-        setup_uses="actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
-        setup_uses_version="v5",
+        setup_uses="actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+        setup_uses_version="v7",
         matrix_var="python",
         setup_with_key="python-version",
         default_versions=("3.12",),
@@ -62,8 +62,8 @@ REGISTRY: dict[str, StackSpec] = {
     "node": StackSpec(
         id="node",
         detect_files=("package.json",),
-        setup_uses="actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
-        setup_uses_version="v5",
+        setup_uses="actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+        setup_uses_version="v7",
         matrix_var="node",
         setup_with_key="node-version",
         default_versions=("20",),

@@ -2,6 +2,7 @@ import pytest
 
 from rigging import stacks
 from rigging.config import Config
+from rigging import plan
 from rigging.plan import CiPlan, Job, build_plan
 
 
@@ -31,11 +32,10 @@ def test_python_job_steps_in_order():
     install_step, test_step = stacks.REGISTRY["python"].steps
 
     assert job.steps == (
-        stacks.Step(uses="actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-                    uses_version="v4"),
+        plan.CHECKOUT_STEP,
         stacks.Step(
-            uses="actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
-            uses_version="v5",
+            uses=stacks.REGISTRY["python"].setup_uses,
+            uses_version=stacks.REGISTRY["python"].setup_uses_version,
             with_={"python-version": "${{ matrix.python }}"},
         ),
         install_step,
@@ -63,11 +63,10 @@ def test_node_job_wires_node_version_and_npm_steps():
     assert job.matrix_var == "node"
     assert job.versions == ("18", "20")
     assert job.steps == (
-        stacks.Step(uses="actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-                    uses_version="v4"),
+        plan.CHECKOUT_STEP,
         stacks.Step(
-            uses="actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
-            uses_version="v5",
+            uses=stacks.REGISTRY["node"].setup_uses,
+            uses_version=stacks.REGISTRY["node"].setup_uses_version,
             with_={"node-version": "${{ matrix.node }}"},
         ),
         stacks.Step(run="npm ci"),

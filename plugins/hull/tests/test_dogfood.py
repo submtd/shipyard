@@ -44,8 +44,13 @@ def test_security_yml_matches_rendered_output_byte_for_byte():
     assert _rendered() == committed
 
 
-def test_security_yml_uses_gitleaks_action_v2():
-    assert "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7" in _rendered()
+def test_security_yml_uses_the_registrys_gitleaks_pin():
+    # Was named ..._v2 and hardcoded a v2 SHA; the name outlived the pin.
+    # Reading the ref from the registry keeps this true across upgrades
+    # while still asserting the committed file uses what hull renders.
+    from hull.scanners import REGISTRY
+
+    assert REGISTRY["gitleaks"].action_ref in _rendered()
 
 
 def test_security_yml_only_whitelisted_expression():
