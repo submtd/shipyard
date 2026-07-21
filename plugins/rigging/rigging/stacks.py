@@ -15,6 +15,11 @@ class Step:
 
     name: Optional[str] = None
     uses: Optional[str] = None
+    #: Human-readable tag for a SHA-pinned `uses`, rendered as a trailing
+    #: YAML comment (`# v4`). It must stay OUTSIDE the quoted scalar --
+    #: inside, it becomes part of the ref and the action fails to resolve.
+    #: A registry constant, never user input, so it cannot carry injection.
+    uses_version: Optional[str] = None
     with_: Optional[dict] = None
     run: Optional[str] = None
 
@@ -26,6 +31,10 @@ class StackSpec:
     id: str
     detect_files: tuple[str, ...]
     setup_uses: str
+    #: The tag the pinned setup_uses SHA corresponds to, rendered as a
+    #: trailing comment so the pin stays readable and Dependabot can bump
+    #: both together.
+    setup_uses_version: str
     matrix_var: str
     setup_with_key: str
     default_versions: tuple[str, ...]
@@ -36,7 +45,8 @@ REGISTRY: dict[str, StackSpec] = {
     "python": StackSpec(
         id="python",
         detect_files=("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"),
-        setup_uses="actions/setup-python@v5",
+        setup_uses="actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+        setup_uses_version="v5",
         matrix_var="python",
         setup_with_key="python-version",
         default_versions=("3.12",),
@@ -52,7 +62,8 @@ REGISTRY: dict[str, StackSpec] = {
     "node": StackSpec(
         id="node",
         detect_files=("package.json",),
-        setup_uses="actions/setup-node@v5",
+        setup_uses="actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
+        setup_uses_version="v5",
         matrix_var="node",
         setup_with_key="node-version",
         default_versions=("20",),

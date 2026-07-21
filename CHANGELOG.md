@@ -118,6 +118,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Claude to read fields that aren't there, leaving it to guess, and a guess
   that disagrees with the loader's defaults produces a `merge-strategy` or
   `pr-edge` block nobody can explain.
+### Changed
+
+- Every GitHub Actions ref is now pinned to a full commit SHA with a
+  trailing `# v4`-style comment, replacing the floating major-version tags
+  (`actions/checkout@v4`, `gitleaks/gitleaks-action@v2`, …). A major tag is
+  repointable at will by the action's owner, so it was never a pin -- yet
+  README, CHANGELOG and hull's own design spec all called it one, and
+  hull's `test_gitleaks_action_ref_is_pinned` accepted it. That mattered
+  most in `hull`, the plugin whose entire job is supply-chain security, and
+  in `gitleaks-action`, which runs with `GITHUB_TOKEN` in its environment.
+  Covers the three workflows, the `keel:init` template, and the `rigging`
+  and `hull` registries that generate them for downstream repos. The
+  documentation's claim is now true rather than aspirational, and
+  `bosun`'s `github-actions` Dependabot entry keeps the pins current.
+
+### Fixed
+
+- `rigging` and `hull` renderers now emit `Step.name`, which both declared
+  and neither rendered -- a registry entry written as `Step(name=...)`
+  silently lost it, with no error and no test. Duplicated latent bug,
+  present in both because the renderer was copy-pasted before either used
+  the field.
 
 ### Added
 

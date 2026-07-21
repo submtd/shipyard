@@ -14,10 +14,12 @@ import pytest
 from hull import scanners
 from hull.scanners import REGISTRY, SCANNER_IDS, ScannerSpec, Step
 
-# A pinned action ref: "<anything>@v<digits>" (e.g. "owner/repo@v2") or a
-# 40-hex-char full commit SHA after the "@".
-_PINNED_REF_RE = re.compile(r".+@v?\d+")
-_SHA_RE = re.compile(r"[0-9a-f]{40}")
+# A pinned action ref names an immutable commit: "owner/repo@<40-hex>".
+# This used to also accept "owner/repo@v2", which is not a pin at all -- a
+# major-version tag is repointable at will by the action's owner, and hull
+# is the plugin whose entire job is supply-chain security. Accepting it
+# made the word "pinned" in the test name untrue.
+_SHA_PINNED_REF_RE = re.compile(r"[^@\s]+@[0-9a-f]{40}")
 
 
 def test_registry_keys():
@@ -38,13 +40,16 @@ def test_spec_id_matches_registry_key(key):
 
 
 def test_gitleaks_action_ref_is_pinned():
-    ref = REGISTRY["gitleaks"].action_ref
-    sha_suffix = ref.rsplit("@", 1)[-1]
-    assert _PINNED_REF_RE.fullmatch(ref) or _SHA_RE.fullmatch(sha_suffix)
+    assert _SHA_PINNED_REF_RE.fullmatch(REGISTRY["gitleaks"].action_ref)
+
+
+def test_every_registry_action_ref_is_a_sha_pin():
+    for spec in REGISTRY.values():
+        assert _SHA_PINNED_REF_RE.fullmatch(spec.action_ref), spec.action_ref
 
 
 def test_gitleaks_action_ref_value():
-    assert REGISTRY["gitleaks"].action_ref == "gitleaks/gitleaks-action@v2"
+    assert REGISTRY["gitleaks"].action_ref == "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7"
 
 
 def test_gitleaks_checkout_fetch_depth():
@@ -85,13 +90,13 @@ def test_step_is_frozen_dataclass():
 def test_step_has_name_uses_with_run_env_fields():
     step = Step(
         name="Scan",
-        uses="gitleaks/gitleaks-action@v2",
+        uses="gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7",
         with_={"key": "value"},
         run=None,
         env={"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"},
     )
     assert step.name == "Scan"
-    assert step.uses == "gitleaks/gitleaks-action@v2"
+    assert step.uses == "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7"
     assert step.with_ == {"key": "value"}
     assert step.run is None
     assert step.env == {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
@@ -104,3 +109,8 @@ def test_step_fields_default_to_none():
     assert step.with_ is None
     assert step.run is None
     assert step.env is None
+
+
+def test_every_pinned_ref_carries_a_version_comment():
+    for spec in REGISTRY.values():
+        assert spec.action_ref_version
