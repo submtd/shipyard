@@ -50,18 +50,25 @@ def parse_frontmatter(text):
     return fields
 
 
+# Each negative test pins the SPECIFIC check that must fire. The inputs are
+# chosen so exactly one check can catch them, and the `match=` assertion
+# proves which one did. Without this, a test passes off the wrong branch and
+# silently stops guarding what it names: text with no delimiter at all is
+# caught by the unclosed-block check, not the opening-delimiter check, so
+# neutering the opening check alone would leave every test green.
 def test_parser_rejects_missing_opening_delimiter():
-    with pytest.raises(FrontmatterError):
-        parse_frontmatter("name: init\ndescription: x\n")
+    # Closing delimiter present, opening absent -- only the open check can fire.
+    with pytest.raises(FrontmatterError, match="open"):
+        parse_frontmatter("name: init\ndescription: x\n---\n")
 
 
 def test_parser_rejects_unclosed_block():
-    with pytest.raises(FrontmatterError):
+    with pytest.raises(FrontmatterError, match="not closed"):
         parse_frontmatter("---\nname: init\ndescription: x\n")
 
 
 def test_parser_rejects_a_non_key_line():
-    with pytest.raises(FrontmatterError):
+    with pytest.raises(FrontmatterError, match="not a key"):
         parse_frontmatter("---\nname: init\ngarbage\n---\n")
 
 
