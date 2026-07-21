@@ -18,7 +18,11 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
-Closes the findings left open by 0.3.0's code review.
+## [0.4.0] - 2026-07-21
+
+Closes the findings left open by 0.3.0's code review. Minor rather than
+major despite the breaking change to rendered output: pre-1.0, and the
+break is confined to regenerating two workflow files.
 
 ### Added
 

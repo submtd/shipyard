@@ -13,13 +13,13 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 def test_package_imports():
     import stow
 
-    assert stow.__version__ == "0.3.0"
+    assert stow.__version__ == "0.4.0"
 
 
 def test_plugin_json_parses_and_names_stow():
     plugin = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["name"] == "stow"
-    assert plugin["version"] == "0.3.0"
+    assert plugin["version"] == "0.4.0"
 
 
 def test_marketplace_lists_stow():
