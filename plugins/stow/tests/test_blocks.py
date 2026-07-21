@@ -361,6 +361,44 @@ def test_removal_of_all_desired_sections_leaves_only_free_lines():
 
 
 # ---------------------------------------------------------------------------
+# boundary removal: a removed block at the very start or end of the file
+# leaves no orphaned separator blank line behind.
+#
+# The interior-sandwich collapse above (decision #2) only fires when a
+# removed region has a blank-adjacent neighbor on *both* sides -- it
+# collapses that pair down to one. At a file edge there's only one side,
+# so without dedicated handling the lone separator blank that used to
+# stand between the removed region and its single neighbor is never
+# dropped, and survives as an orphan.
+# ---------------------------------------------------------------------------
+
+
+def test_start_of_file_removal_drops_leading_orphan_blank():
+    # node is the very first thing in the file; removing it must not leave
+    # a leading blank line where it used to be.
+    existing = _block_text(NODE) + "\n\n" + _block_text(BASE) + "\n"
+    result = apply_blocks(existing, [BASE])
+    assert result == _block_text(BASE) + "\n"
+
+
+def test_end_of_file_removal_drops_trailing_orphan_blank():
+    # node is the very last thing in the file; removing it must not leave
+    # a trailing blank line behind.
+    existing = "free1\n\n" + _block_text(NODE) + "\n"
+    result = apply_blocks(existing, [])
+    assert result == "free1\n"
+
+
+def test_both_start_and_end_boundary_removal_in_one_call():
+    # node at the head and base at the tail are both declaratively
+    # removed in the same call; only the interior free line should
+    # survive, with no orphaned blank at either edge.
+    existing = _block_text(NODE) + "\n\nfree1\n\n" + _block_text(BASE) + "\n"
+    result = apply_blocks(existing, [])
+    assert result == "free1\n"
+
+
+# ---------------------------------------------------------------------------
 # unknown-id regions
 # ---------------------------------------------------------------------------
 

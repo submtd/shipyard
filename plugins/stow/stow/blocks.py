@@ -168,10 +168,21 @@ def apply_blocks(existing_text: str, desired_sections: list) -> str:
       adjacent to a blank line immediately after it, that newly-adjacent
       pair collapses to a single blank line. This is local to the removed
       region's position -- blank runs anywhere else in the file are left
-      alone.
+      alone. At a file boundary there's only one side to collapse: a
+      removed region with nothing preceding it (nothing before it, or
+      only other removed regions at the top) drops a single leading
+      blank from the gap that follows it; a removed region with nothing
+      following it to end of file (nothing after it, or only blank
+      lines) drops a single trailing blank from the gap that precedes
+      it. Either way, removing a block never leaves a stray orphan blank
+      at the start or end of the file.
     - A desired section with no existing region is appended at the end, in
-      canonical order, each separated from what precedes it by exactly one
-      blank line.
+      canonical order, each separated from what precedes it by at least
+      one blank line -- never doubled. If the free content immediately
+      preceding the append point already ends in its own multi-blank
+      tail, that tail is preserved as-is (untouched, per the
+      preserved-verbatim guarantee above) rather than collapsed to
+      exactly one.
 
     Raises `StowError` if any existing stow marker doesn't parse cleanly
     (unterminated opener, orphan closer, mismatched pair, or duplicate
@@ -206,8 +217,19 @@ def apply_blocks(existing_text: str, desired_sections: list) -> str:
 
     out: list = []
     pos = 0
-    for block_id, start, end in well_formed:
+    # Set when a just-processed removal sat at the head of the file (no
+    # emitted output yet, no gap before it) and was itself followed by a
+    # blank line: the orphan blank lives in the *next* gap, not this
+    # region's own (empty) gap, so dropping it has to be deferred one
+    # iteration.
+    drop_next_leading_blank = False
+    total = len(well_formed)
+    for idx, (block_id, start, end) in enumerate(well_formed):
         gap = lines[pos:start]
+        if drop_next_leading_blank and gap and gap[0] == "":
+            gap = gap[1:]
+        drop_next_leading_blank = False
+
         if block_id in desired_by_id:
             out.extend(gap)
             out.extend(render_block(desired_by_id[block_id]).split("\n"))
@@ -216,16 +238,39 @@ def apply_blocks(existing_text: str, desired_sections: list) -> str:
             # leaves a blank line immediately before the removed region
             # directly touching a blank line immediately after it,
             # collapse that newly-adjacent pair to one blank -- local to
-            # this removal, nothing else in `gap` is touched.
+            # this removal, nothing else in `gap` is touched (the
+            # interior case).
+            #
+            # Boundary cases: nothing precedes this region at all (empty
+            # `gap`, nothing emitted into `out` yet) -- defer dropping
+            # its blank-after to the next gap, since that's where the
+            # orphan blank actually lives. Nothing follows this region to
+            # EOF (it's the last well-formed block and everything after
+            # it, if anything, is blank) -- drop a trailing blank
+            # straight out of this region's own `gap`.
+            at_head = not out and not gap
             after_is_blank = end + 1 < len(lines) and lines[end + 1] == ""
+            no_following_content = idx == total - 1 and all(
+                line == "" for line in lines[end + 1 :]
+            )
+
             if gap and gap[-1] == "" and after_is_blank:
                 gap = gap[:-1]
+            if no_following_content and gap and gap[-1] == "":
+                gap = gap[:-1]
+            if at_head and after_is_blank:
+                drop_next_leading_blank = True
+
             out.extend(gap)
         else:
             out.extend(gap)
             out.extend(lines[start : end + 1])  # unknown id: forward-compat, untouched
         pos = end + 1
-    out.extend(lines[pos:])
+
+    tail = lines[pos:]
+    if drop_next_leading_blank and tail and tail[0] == "":
+        tail = tail[1:]
+    out.extend(tail)
 
     present_ids = {block_id for block_id, _start, _end in well_formed}
     for spec in desired_sections:
