@@ -168,7 +168,47 @@ def changelog_gained_content(base, cwd=None):
     return _unreleased_body(after) != _unreleased_body(before)
 
 
-_CWD_FLAGS = {"-C", "--git-dir", "--work-tree"}
+#: Checked in this order, most-specific first. `--work-tree` names exactly
+#: the directory commands act on, so it wins over `-C` (which only sets the
+#: starting directory) and over `--git-dir` (which names the metadata
+#: directory, not the tree).
+_WORK_TREE_FLAGS = {"--work-tree"}
+_DASH_C_FLAGS = {"-C"}
+_GIT_DIR_FLAGS = {"--git-dir"}
+
+_DOT_GIT = ".git"
+
+
+def _resolve(path, default):
+    """Turn a path as written on the command line into one a subprocess can
+    actually be run in: `~` expanded, and a relative path anchored to the
+    directory the command would have started in.
+
+    Returned unanchored, a relative path like 'packages/api' is resolved by
+    the OS against the *hook process's* cwd, which is unrelated. It almost
+    never exists there, so `repo_root()` returns None and the guard returns
+    without evaluating a single rule -- silently, with no block and no
+    message. Failing open like that is worse than a wrong answer, because
+    nothing signals that anything was skipped.
+    """
+    expanded = Path(path).expanduser()
+    if expanded.is_absolute() or default is None:
+        return str(expanded)
+    return str(Path(default) / expanded)
+
+
+def _work_tree_for(git_dir):
+    """The directory to run in, given a `--git-dir` value.
+
+    A git dir is not a working directory: `git rev-parse --show-toplevel`
+    fails from inside one ("this operation must be run in a work tree"), so
+    handing it back unchanged failed the guard open exactly as an
+    unresolvable path would. For the conventional `<repo>/.git` layout the
+    work tree is its parent. A bare repo (`repo.git`) has no work tree above
+    it, so it is left alone rather than pointed at an unrelated directory.
+    """
+    path = Path(git_dir)
+    return str(path.parent) if path.name == _DOT_GIT else git_dir
 
 
 def target_cwd(command, default):
@@ -188,9 +228,18 @@ def target_cwd(command, default):
             continue
         prog, rest = seg[0], seg[1:]
         if prog == "cd" and rest:
-            return rest[0]
+            # `cd -`, `cd -P foo` and friends: the target is either unknowable
+            # (the previous directory) or not this token. Skip rather than
+            # treat the flag as a path -- a wrong path fails the guard open.
+            if not rest[0].startswith("-"):
+                return _resolve(rest[0], default)
         if prog == "git":
-            value = _actions._global_flag_value(rest, _CWD_FLAGS)
+            value = _actions._global_flag_value(rest, _WORK_TREE_FLAGS)
+            if value is None:
+                value = _actions._global_flag_value(rest, _DASH_C_FLAGS)
             if value is not None:
-                return value
+                return _resolve(value, default)
+            git_dir = _actions._global_flag_value(rest, _GIT_DIR_FLAGS)
+            if git_dir is not None:
+                return _resolve(_work_tree_for(git_dir), default)
     return default

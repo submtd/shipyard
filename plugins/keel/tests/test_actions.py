@@ -253,3 +253,31 @@ def test_an_ordinary_push_is_not_flagged():
 
 def test_a_push_with_no_refspec_is_not_flagged():
     assert classify("git push")[0].pushes_every_branch is False
+
+
+# --- Strategy flags were detected with `"-s" in args`, a membership test
+# over every token. Any flag VALUE that happened to equal a strategy flag
+# was read as the strategy -- and the merge-strategy rule blocks outright on
+# a mismatch, so a correct command got a hard DENY citing a strategy it
+# never asked for. -----------------------------------------------------
+
+
+def test_a_flag_value_that_looks_like_a_strategy_flag_is_not_the_strategy():
+    action = classify("gh pr merge 1 --body '-s' --merge")[0]
+    assert action.strategy == "merge"
+
+
+def test_a_strategy_is_not_invented_from_a_body_alone():
+    action = classify("gh pr merge 1 --body '-s'")[0]
+    assert action.strategy is None
+
+
+def test_a_subject_that_looks_like_a_strategy_flag_is_not_the_strategy():
+    action = classify("gh pr merge 1 --subject '--rebase' --squash")[0]
+    assert action.strategy == "squash"
+
+
+def test_the_first_real_strategy_flag_wins():
+    assert classify("gh pr merge 1 --squash")[0].strategy == "squash"
+    assert classify("gh pr merge 1 -r")[0].strategy == "rebase"
+    assert classify("gh pr merge 1 -m")[0].strategy == "merge"

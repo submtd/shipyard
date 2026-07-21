@@ -188,6 +188,15 @@ def _global_flag_value(args, names):
         a = args[i]
         if a in names and i + 1 < len(args):
             return args[i + 1]
+        # `--flag=value`. git's own parser accepts this for its long global
+        # flags (`--git-dir=`, `--work-tree=`) and only for those: `-C`
+        # always takes a separate argument, so `-C=/x` means the path is
+        # literally "=/x". Restricting to `--` keeps us from resolving a
+        # path git never used.
+        if a.startswith("--") and "=" in a:
+            name, _, value = a.partition("=")
+            if name in names:
+                return value
         if a in GIT_VALUE_FLAGS:
             i += 2
             continue
@@ -231,6 +240,38 @@ def _parse_push(args):
     )
 
 
+#: gh's boolean merge-strategy flags, longest-lived spellings first.
+_MERGE_STRATEGY_FLAGS = (
+    ("squash", {"--squash", "-s"}),
+    ("merge", {"--merge", "-m"}),
+    ("rebase", {"--rebase", "-r"}),
+)
+
+
+def _merge_strategy(args):
+    """The merge strategy `args` asks for, or None.
+
+    Walks positionally, stepping over each value flag together with the
+    token it consumes. The previous `"-s" in args` membership test looked at
+    every token including flag values, so `gh pr merge 1 --body '-s'
+    --merge` read as `squash`. That is not a cosmetic misparse: the
+    merge-strategy rule *blocks* on a mismatch, so a correct command earned
+    a hard DENY naming a strategy it never requested -- a false block with
+    an untrue reason, the one failure mode an advisory guard cannot afford.
+    """
+    i = 0
+    while i < len(args):
+        token = args[i]
+        for name, spellings in _MERGE_STRATEGY_FLAGS:
+            if token in spellings:
+                return name
+        if token in GH_MERGE_VALUE_FLAGS:
+            i += 2  # skip the flag AND its value
+            continue
+        i += 1
+    return None
+
+
 def _classify_segment(tokens):
     rest = _strip_env_prefix(tokens)
     if not rest:
@@ -258,14 +299,7 @@ def _classify_segment(tokens):
         if len(pos) >= 2 and pos[0] == "pr" and pos[1] == "merge":
             # Re-parse with merge-specific value flags to get all positionals
             pos = _positionals(args, GH_MERGE_VALUE_FLAGS)
-            if "--squash" in args or "-s" in args:
-                strategy = "squash"
-            elif "--merge" in args or "-m" in args:
-                strategy = "merge"
-            elif "--rebase" in args or "-r" in args:
-                strategy = "rebase"
-            else:
-                strategy = None
+            strategy = _merge_strategy(args)
             return Action(
                 kind="pr-merge",
                 pr_number=pos[2] if len(pos) >= 3 else None,

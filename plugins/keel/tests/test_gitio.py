@@ -1,4 +1,6 @@
 import subprocess
+from pathlib import Path
+
 from keel import gitio
 
 
@@ -261,8 +263,74 @@ def test_target_cwd_ignores_dash_c_after_subcommand():
 
 
 def test_target_cwd_honours_git_dir_before_subcommand():
-    assert gitio.target_cwd("git --git-dir /other/.git commit -m x", "/here") == "/other/.git"
+    # Resolves to the work tree, not to the .git directory itself -- see
+    # test_target_cwd_maps_a_git_dir_to_its_work_tree.
+    assert gitio.target_cwd("git --git-dir /other/.git commit -m x", "/here") == "/other"
 
 
 def test_target_cwd_honours_work_tree_before_subcommand():
     assert gitio.target_cwd("git --work-tree /other commit -m x", "/here") == "/other"
+
+
+# --- Resolution defects: each one silently disabled the guard. An
+# unresolvable cwd makes repo_root() return None, and the hook then returns
+# without evaluating a single rule -- no block, no message, nothing. ------
+
+
+def test_target_cwd_resolves_a_relative_cd_against_the_default():
+    """`cd packages/api && git commit` is the normal monorepo shape. Returned
+    bare, 'packages/api' is not a directory relative to the hook's process
+    cwd, so the guard silently switched off for every such command."""
+    assert gitio.target_cwd(
+        "cd packages/api && git commit -m x", "/repo") == "/repo/packages/api"
+
+
+def test_target_cwd_leaves_an_absolute_cd_alone():
+    assert gitio.target_cwd("cd /other && git commit -m x", "/repo") == "/other"
+
+
+def test_target_cwd_expands_a_tilde():
+    home = str(Path.home())
+    assert gitio.target_cwd("cd ~/work/repo && git commit -m x", "/repo") == \
+        f"{home}/work/repo"
+
+
+def test_target_cwd_honours_the_equals_form_of_git_dir():
+    """`--git-dir=<path>` is as common as the space-separated form; git
+    itself accepts both. Only the space form was recognised."""
+    assert gitio.target_cwd(
+        "git --git-dir=/other/.git commit -m x", "/repo") == "/other"
+
+
+def test_target_cwd_does_not_invent_an_equals_form_for_short_flags():
+    """git's own parser accepts `--git-dir=<path>` but not `-C=<path>` -- for
+    `-C` the path must be a separate argument. Accepting `-C=/other` here
+    would resolve a path git never used."""
+    assert gitio.target_cwd("git -C=/other commit -m x", "/repo") == "/repo"
+
+
+def test_target_cwd_maps_a_git_dir_to_its_work_tree():
+    """--git-dir names the .git directory, but git cannot run `rev-parse
+    --show-toplevel` from inside one -- so returning it unchanged failed the
+    guard open just as surely as returning nothing."""
+    assert gitio.target_cwd(
+        "git --git-dir /other/.git commit -m x", "/repo") == "/other"
+
+
+def test_target_cwd_leaves_a_bare_repo_git_dir_alone():
+    """A bare repo's git dir is not named '.git' and has no work tree above
+    it; stripping a component would point somewhere unrelated."""
+    assert gitio.target_cwd(
+        "git --git-dir /srv/repo.git commit -m x", "/repo") == "/srv/repo.git"
+
+
+def test_target_cwd_prefers_work_tree_over_git_dir():
+    """When both are given, the work tree is the directory commands act on."""
+    assert gitio.target_cwd(
+        "git --git-dir /other/.git --work-tree /wt commit -m x", "/repo") == "/wt"
+
+
+def test_target_cwd_ignores_a_cd_it_cannot_resolve():
+    """`cd -` is the previous directory, which we have no way to know. Better
+    to evaluate against the default than to invent a path."""
+    assert gitio.target_cwd("cd - && git commit -m x", "/repo") == "/repo"
