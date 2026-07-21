@@ -143,6 +143,55 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Repo-level `tests/` (wired in through `.ballast.json`, so `ballast`
+  renders the runner config for it like any other suite) covering what no
+  single plugin owns: every `marketplace.json` entry points at a real
+  plugin directory, every plugin directory is registered, names agree with
+  the `plugin.json` they point at, and each `plugin.json` version matches
+  its package `__version__`. Previously each plugin only asserted that
+  *it* was listed, so a marketplace entry with no directory shipped green.
+- `keel`'s smoke test now covers what its five juniors already did --
+  `plugin.json`, marketplace registration, frontmatter for all eleven
+  skills, module importability -- plus the two things only `keel` has:
+  `hooks.json` wiring, and a check that `orient.py`'s advertised skill
+  list matches the skills actually on disk. It was three lines asserting
+  only `__version__`, on the oldest and most-installed plugin in the
+  suite.
+- `test_purity.py` in all six plugins now asserts that its hand-maintained
+  `PURE_MODULES` list covers every module in the package. A new module was
+  previously guarded by nobody -- adding one that imports `subprocess`
+  passed purity silently in all six.
+- `bosun`'s `propose_config` key order is now pinned. `build_plan` and
+  `render` were both order-defended, but the function that writes the
+  *other* committed artifact (`.bosun.json`) was stable only by accident:
+  every assertion compared dicts with `==`, which ignores key order.
+- `hull:init` now tells the user to run a one-time `gitleaks detect` over
+  existing history at adoption. The rendered workflow scans the event's
+  commit range, so the run triggered by the commit that adds
+  `security.yml` scans only that commit -- a repo with a secret committed
+  last year gets a green check and has never been scanned.
+
+### Changed
+
+- `keel`: under `trunk` topology, `pr-edge` now accepts any branch into
+  production, not only `feature/*` and `hotfix/*` -- trunk-based development
+  is not prefix-strict the way gitflow is. The `changelog` gate still applies
+  to all trunk work branches (previously it only applied to `feature/*`/
+  `hotfix/*`, silently exempting anything else).
+
+### Fixed
+
+- `.gitattributes` now normalizes line endings repo-wide (`* text=auto
+  eol=lf`). Five of the six plugin suites compare committed files
+  byte-for-byte, but only `ballast`'s artifacts were covered, so a Windows
+  checkout with `core.autocrlf=true` failed the rest.
+- `ballast`'s "every plugin is in testpaths" guard now derives the plugin
+  list from disk instead of hardcoding six names -- the hardcoded list was
+  itself a way for a seventh plugin to escape the check.
+- `CHANGELOG.md` had two `### Added` sections inside `## [Unreleased]`,
+  which is malformed per Keep a Changelog and which neither the gate nor
+  any test noticed. Merged.
+
 - `bosun`, Shipyard's sixth and final core plugin: renders an
   injection-free `.github/dependabot.yml` from a committed `.bosun.json`
   -- github-actions always-on plus detected pip/npm. Dogfooded net-new on
@@ -174,23 +223,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   mirrors the advisory hook's policy (release/back-merge exemptions;
   unknown never blocks). Wired into `main`'s required status checks via
   branch protection.
-
-### Changed
-
-- `keel`: under `trunk` topology, `pr-edge` now accepts any branch into
-  production, not only `feature/*` and `hotfix/*` -- trunk-based development
-  is not prefix-strict the way gitflow is. The `changelog` gate still applies
-  to all trunk work branches (previously it only applied to `feature/*`/
-  `hotfix/*`, silently exempting anything else).
-
-### Fixed
-
-- `plugin.json` no longer double-registers `hooks/hooks.json`, which Claude
-  Code auto-loads by convention; the redundant reference failed on install
-  with a duplicate-hooks error.
-
-### Added
-
 - `keel`, the first Shipyard plugin: a rule engine that models a project's
   git lifecycle as `(action, base, head, headIsFork, capability)`, with
   no notion of "role."
@@ -200,8 +232,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   review policy, and current branch, once per session.
 - Ten lifecycle skills: `start-work`, `sync`, `finish-work`,
   `respond-to-review`, `review`, `land`, `release`, `ship`, `protect`,
-  and `doctor`.
+  and `doctor`. (`keel:init` landed later, listed above.)
 - `.keel.json` project configuration, with `trunk` and `gitflow`
   topologies, configurable branch prefixes, contribution model, review
   policy, merge strategy, and changelog requirement.
 - A test suite covering the rule engine, both I/O modules, and the guard.
+- `plugin.json` no longer double-registers `hooks/hooks.json`, which Claude
+  Code auto-loads by convention; the redundant reference failed on install
+  with a duplicate-hooks error.

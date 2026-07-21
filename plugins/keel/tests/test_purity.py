@@ -20,6 +20,11 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 KEEL_PKG = PLUGIN_ROOT / "keel"
 HOOKS_DIR = PLUGIN_ROOT / "hooks"
 
+#: Modules that are ALLOWED to do I/O. Everything in the package
+#: must be in exactly one of these two lists -- see the coverage
+#: test at the bottom of this file.
+IO_MODULES = ("gitio", "ghio")
+
 PURE_MODULES = ("config", "actions", "facts", "rules", "render", "scaffold")
 
 FORBIDDEN_IN_PURE_MODULES = {
@@ -91,3 +96,17 @@ def test_every_subprocess_run_call_passes_timeout(path):
             f"{path}:{call.lineno}: subprocess.run(...) call has no "
             f"timeout= argument."
         )
+
+
+def test_pure_modules_list_covers_every_module_in_the_package():
+    """PURE_MODULES is hand-maintained, so a new module was guarded by
+    nobody: adding `<pkg>/foo.py` with `import subprocess` passed purity
+    silently. Anything not on the explicit I/O allowlist must be listed.
+    """
+    on_disk = {p.stem for p in KEEL_PKG.glob("*.py")} - {"__init__"}
+    covered = set(PURE_MODULES) | set(IO_MODULES)
+    missing = sorted(on_disk - covered)
+    assert not missing, (
+        f"new module(s) {missing} are neither in PURE_MODULES nor declared "
+        f"as I/O modules in IO_MODULES -- add them to one"
+    )

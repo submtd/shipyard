@@ -8,7 +8,8 @@
         "plugins/stow/tests",
         "plugins/ballast/tests",
         "plugins/hull/tests",
-        "plugins/bosun/tests"
+        "plugins/bosun/tests",
+        "tests"
       ],
       "pythonPath": [
         "plugins/keel",
