@@ -21,6 +21,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   file every marker line ended in `\r`, matched nothing, and a genuinely
   corrupt `.gitignore` was reported as having no malformed markers -- the
   skill's verification step was the caller that got that vacuous pass.
+- `keel`'s guard was inert for every multi-line Bash command. `_segments`
+  listed `"\n"` as a command separator, but shlex in whitespace-split mode
+  never emits a newline token, so a whole multi-line script collapsed into
+  one segment and every command after the first was silently discarded --
+  `git status\ngit push origin main` classified as nothing at all and the
+  push to a protected branch went unremarked. Since multi-line scripts are
+  the Bash tool's normal shape, this was the common case rather than an
+  edge case. Newline is now a lexer punctuation character, which keeps
+  multi-line quoted arguments (a wrapped commit message) intact where a
+  plain `split("\n")` would cut them in half.
+- `keel` no longer parses trailing shell comments as arguments.
+  `git push origin feature/x # deploy to main` read `main` as a refspec and
+  produced a hard DENY citing a protected branch the command never touched.
+- `keel` now blocks `git push --all` and `git push --mirror`. Both carry no
+  refspec, so the protected-write rule fell back to checking only the
+  current branch -- from a feature branch that check passed while the
+  command pushed production and integration straight to the remote.
+- `keel` now resolves `git push origin HEAD` (and `@`) to the current
+  branch before the protected-branch check. `HEAD` was compared literally
+  against the protected set, never matched, and a direct push to production
+  from production was allowed. An unresolvable branch warns rather than
+  allowing.
 
 ### Added
 

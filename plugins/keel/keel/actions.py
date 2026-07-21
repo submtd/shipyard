@@ -46,6 +46,47 @@ class Action:
     pr_number: str | None = None
     strategy: str | None = None
     repo: str | None = None
+    #: True for `git push --all` / `--mirror`, which carry no refspec but
+    #: write every local branch. Without this the protected-write rule saw
+    #: `refs == ()` and fell back to checking only the current branch, so
+    #: from a feature branch the check passed while the command pushed
+    #: production and integration straight to the remote.
+    pushes_every_branch: bool = False
+
+
+#: Newline is a command separator here, not whitespace. That takes two
+#: changes acting together and both are load-bearing:
+#:
+#:   1. "\n" is added to punctuation_chars, so the lexer emits it as its own
+#:      token instead of folding it into the neighbouring word.
+#:   2. "\n" is removed from `whitespace`, because shlex checks whitespace
+#:      first -- left there, the newline is consumed before punctuation
+#:      handling ever sees it.
+#:
+#: Doing only (2) glues the lines together ("status\ngit"); doing neither is
+#: the bug this replaced -- `_segments` listed "\n" as a separator but shlex
+#: in whitespace_split mode never emitted one, so an entire multi-line
+#: script collapsed into a single segment and every command after the first
+#: was silently discarded. Multi-line scripts are the Bash tool's normal
+#: output, so that was the common case, not an edge case.
+#:
+#: Splitting the raw string on "\n" before lexing would be simpler and
+#: wrong: it cuts multi-line quoted arguments (a heredoc'd or wrapped commit
+#: message) in half, and each half then fails to lex as unbalanced quotes.
+#: Letting shlex own the split keeps quotes intact -- see
+#: test_newline_inside_a_quoted_argument_does_not_split_the_command.
+_PUNCTUATION_CHARS = "();<>|&\n"
+
+_WHITESPACE = " \t\r"
+
+_OPERATOR_SEPARATORS = ("&&", "||", ";", "|", "&")
+
+
+def _is_newline(token):
+    """True for a newline separator. A run of blank lines arrives as a
+    single all-newline token ("\\n\\n"), so match on composition rather than
+    equality."""
+    return bool(token) and set(token) == {"\n"}
 
 
 def _segments(command):
@@ -54,15 +95,40 @@ def _segments(command):
     shlex in POSIX mode keeps quoted text intact, so a ';' inside a commit
     message never becomes a separator.
     """
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=_PUNCTUATION_CHARS)
+    lexer.whitespace = _WHITESPACE
     lexer.whitespace_split = True
+    # Comments are stripped here rather than by shlex. shlex's own comment
+    # handling reads to end of line and swallows the newline with it, which
+    # would undo the separator above and re-merge the two commands -- see
+    # test_a_comment_does_not_swallow_a_following_line. So the lexer keeps
+    # emitting '#' tokens and we drop them ourselves, up to but not
+    # including the newline.
+    #
+    # Leaving comments unstripped (the previous behaviour) was worse than
+    # cosmetic: the words of a trailing "# deploy to main" became positional
+    # args, so `git push origin feature/x # deploy to main` parsed 'main' as
+    # a refspec and the guard emitted a hard DENY naming a protected branch
+    # the command never touched. A false block with an untrue reason is the
+    # most corrosive thing an advisory hook can do.
     lexer.commenters = ""
-    out, current = [], []
+    out, current, in_comment = [], [], False
     try:
         for token in lexer:
-            if token in ("&&", "||", ";", "|", "&", "\n"):
+            # Newline first, and unconditionally: it both ends a comment and
+            # separates commands. A comment runs to end of line only, so an
+            # operator inside one is commented text, not a separator.
+            if _is_newline(token):
                 out.append(current)
                 current = []
+                in_comment = False
+            elif in_comment:
+                continue
+            elif token in _OPERATOR_SEPARATORS:
+                out.append(current)
+                current = []
+            elif token.startswith("#"):
+                in_comment = True
             else:
                 current.append(token)
     except ValueError:
@@ -155,7 +221,14 @@ def _parse_push(args):
         if dst.startswith("refs/heads/"):
             dst = dst[len("refs/heads/"):]
         refs.append(PushRef(src=src or None, dst=dst, is_tag=is_tag))
-    return Action(kind="push", refs=tuple(refs))
+    # Checked against the raw args, not positionals: these are flags, and
+    # they make the refspec list irrelevant to what actually gets written.
+    pushes_every_branch = "--all" in args or "--mirror" in args
+    return Action(
+        kind="push",
+        refs=tuple(refs),
+        pushes_every_branch=pushes_every_branch,
+    )
 
 
 def _classify_segment(tokens):

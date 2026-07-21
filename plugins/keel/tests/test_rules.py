@@ -415,3 +415,58 @@ def test_feature_pr_without_a_changelog_file_gets_the_distinct_message():
     assert v.rule == "changelog"
     assert "does not exist" in v.message
     assert "requireChangelog" in v.message
+
+
+# --- Rule 1, continued: pushes that target more than they name ------------
+
+
+def test_push_all_from_a_feature_branch_blocks():
+    # 'git push --all' carries no refspec, so the rule fell back to checking
+    # only the current branch -- and from feature/x that check passed, while
+    # the command itself pushed main and develop straight to the remote.
+    action = Action(kind="push", refs=(), pushes_every_branch=True)
+    v = evaluate(action, Facts(branch="feature/x"), cfg())
+    assert v.decision == "block"
+    assert v.rule == "protected-write"
+
+
+def test_push_mirror_from_a_feature_branch_blocks():
+    action = Action(kind="push", refs=(), pushes_every_branch=True)
+    v = evaluate(action, Facts(branch="feature/x"), cfg())
+    assert v.decision == "block"
+
+
+def test_push_all_blocks_even_when_the_current_branch_is_unknown():
+    # Detached HEAD is no reason to allow it: what --all pushes doesn't
+    # depend on where HEAD happens to be.
+    action = Action(kind="push", refs=(), pushes_every_branch=True)
+    v = evaluate(action, Facts(branch=None), cfg())
+    assert v.decision == "block"
+
+
+def test_push_all_names_a_protected_branch_in_its_message():
+    action = Action(kind="push", refs=(), pushes_every_branch=True)
+    v = evaluate(action, Facts(branch="feature/x"), cfg())
+    assert "main" in v.message
+
+
+def test_push_head_resolves_to_the_current_branch():
+    # 'git push origin HEAD' from main is a direct push to main, but 'HEAD'
+    # was compared literally against the protected set and never matched.
+    action = Action(kind="push", refs=(PushRef("HEAD", "HEAD", False),))
+    v = evaluate(action, Facts(branch="main"), cfg())
+    assert v.decision == "block"
+    assert v.rule == "protected-write"
+
+
+def test_push_head_from_a_feature_branch_still_allows():
+    action = Action(kind="push", refs=(PushRef("HEAD", "HEAD", False),))
+    v = evaluate(action, Facts(branch="feature/x"), cfg())
+    assert v.decision == "allow"
+
+
+def test_push_head_warns_when_the_current_branch_is_unknown():
+    # Unknown must never block -- but it must not confidently allow either.
+    action = Action(kind="push", refs=(PushRef("HEAD", "HEAD", False),))
+    v = evaluate(action, Facts(branch=None), cfg())
+    assert v.decision == "warn"
