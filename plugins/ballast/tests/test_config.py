@@ -317,3 +317,31 @@ def test_all_known_per_stack_keys_together_are_accepted(tmp_path):
         "importMode": "prepend", "addOpts": ["-q"],
     }}}))
     assert cfg.stacks["python"].import_mode == "prepend"
+
+
+# --- CI-hostile addOpts ----------------------------------------------------
+
+@pytest.mark.parametrize(
+    "flag",
+    ["--pdb", "--trace", "--pdbcls", "--lf", "--last-failed",
+     "--ff", "--failed-first", "--sw", "--stepwise", "--stepwise-skip"],
+)
+def test_add_opts_rejects_ci_hostile_flags(tmp_path, flag):
+    root = write(tmp_path, {"stacks": {"python": {"addOpts": [flag]}}})
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(root)
+    assert flag in str(excinfo.value)
+
+
+def test_add_opts_rejects_ci_hostile_flag_with_a_value(tmp_path):
+    root = write(tmp_path, {"stacks": {"python": {"addOpts": ["--pdbcls=IPython.terminal.debugger:TerminalPdb"]}}})
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(root)
+    assert "--pdbcls" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("flag", ["-s", "--capture=no", "-x", "--exitfirst", "-q", "--strict-markers"])
+def test_add_opts_still_accepts_defensible_flags(tmp_path, flag):
+    root = write(tmp_path, {"stacks": {"python": {"addOpts": [flag]}}})
+    config = load_config(root)
+    assert flag in config.stacks["python"].add_opts

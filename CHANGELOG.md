@@ -18,6 +18,28 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+### Added
+
+- A repo-wide skill-integrity guard (`plugins/keel/tests/test_skill_integrity.py`)
+  covering every skill in all six plugins: frontmatter parses and carries a
+  `name` and `description`, the `name` matches its directory, cross-skill
+  references resolve, and every plugin is listed in the marketplace. Skills
+  are prompt files with no compiler behind them, so a typo'd `name` or a
+  reference to a renamed skill previously failed only at use.
+- `ballast` rejects CI-hostile `addOpts`. A committed `pytest.ini` is
+  inherited by every run in every environment, and two families of flag do
+  real damage there: interactive debuggers (`--pdb`, `--trace`, `--pdbcls`)
+  block on stdin and hang CI until it times out, and cache-dependent
+  selection (`--lf`, `--ff`, `--sw` and their long forms) makes *which tests
+  run* depend on a previous local run's `.pytest_cache`, silently narrowing
+  the suite. `-s`/`--capture=no` and `-x`/`--exitfirst` stay allowed --
+  defensible standing preferences, not hostile.
+
+### Documentation
+
+- A decision record for `fathom`, the seventh plugin from the original
+  blueprint: not built, and the roster closes at six.
+
 ## [0.4.0] - 2026-07-21
 
 Closes the findings left open by 0.3.0's code review. Minor rather than
