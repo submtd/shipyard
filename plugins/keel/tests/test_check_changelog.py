@@ -107,6 +107,8 @@ def test_main_gate_fails_when_unreleased_matches_merge_base(tmp_path, monkeypatc
     def fake_run_git(args):
         if args[:1] == ["merge-base"]:
             return "abc123\n"
+        if args[:1] == ["show"] and args[1].endswith(":.keel.json"):
+            return None          # no config at base -> defaults (gate on)
         if args[:1] == ["show"]:
             assert args[1] == "abc123:CHANGELOG.md"
             return changelog
@@ -152,9 +154,15 @@ def test_main_warns_when_merge_base_unresolvable(tmp_path, monkeypatch, capsys):
     assert rc == 0
     assert "::warning::" in out
     assert "merge base" in out.lower()
-    # Both merge-base invocations must have been attempted; no "show" call
-    # should happen once the merge base is unresolvable.
-    assert calls == [["merge-base", "origin/main", "HEAD"], ["merge-base", "main", "HEAD"]]
+    # The config is read from the base ref first (both ref forms tried),
+    # then both merge-base invocations. No CHANGELOG "show" call should
+    # happen once the merge base is unresolvable.
+    assert calls == [
+        ["show", "origin/main:.keel.json"],
+        ["show", "main:.keel.json"],
+        ["merge-base", "origin/main", "HEAD"],
+        ["merge-base", "main", "HEAD"],
+    ]
 
 
 def test_main_warns_when_changelog_unreadable_at_merge_base(tmp_path, monkeypatch, capsys):
@@ -188,6 +196,8 @@ def test_main_falls_back_to_non_origin_merge_base(tmp_path, monkeypatch, capsys)
             if args[1].startswith("origin/"):
                 return None
             return "abc123\n"
+        if args[:1] == ["show"] and args[1].endswith(":.keel.json"):
+            return None
         if args[:1] == ["show"]:
             return before
         return None
@@ -196,8 +206,9 @@ def test_main_falls_back_to_non_origin_merge_base(tmp_path, monkeypatch, capsys)
     rc = cc.main(["prog", "main", "feature/x"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert calls[0] == ["merge-base", "origin/main", "HEAD"]
-    assert calls[1] == ["merge-base", "main", "HEAD"]
+    merge_base_calls = [c for c in calls if c[:1] == ["merge-base"]]
+    assert merge_base_calls[0] == ["merge-base", "origin/main", "HEAD"]
+    assert merge_base_calls[1] == ["merge-base", "main", "HEAD"]
     # Discriminating: rc == 0 is also produced by the "could not determine
     # merge base" warning-skip path, so it alone can't prove the fallback
     # sha was actually used. Assert the show step ran against the RESOLVED
@@ -395,3 +406,119 @@ def test_main_same_repo_head_named_release_still_exempt_under_trunk(tmp_path, mo
     out = capsys.readouterr().out
     assert rc == 0
     assert "exempt" in out
+
+
+# --- the gate must not be disableable by the PR it gates ------------------
+#
+# load_cfg read .keel.json from the working tree, which in CI is the PR's
+# HEAD checkout. So a PR could turn the gate off for itself by setting
+# requireChangelog: false in the same branch -- the one config value the
+# gate must not let the reviewed code control. It is now read from the base
+# ref, which only an already-merged (reviewed) change can alter.
+
+
+def _cfg_at_base(text):
+    """Fake _run_git that serves `text` as .keel.json at the base ref."""
+    def fake_run_git(args):
+        if args[:1] == ["show"] and args[1].endswith(":.keel.json"):
+            return text
+        return None
+    return fake_run_git
+
+
+def test_require_changelog_false_on_the_branch_does_not_disable_the_gate(
+        tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    # The branch flips it off...
+    (tmp_path / ".keel.json").write_text('{"requireChangelog": false}')
+    changelog = "# Changelog\n\n## [Unreleased]\n\n### Added\n- same\n"
+    (tmp_path / "CHANGELOG.md").write_text(changelog)
+
+    def fake_run_git(args):
+        if args[:1] == ["show"] and args[1].endswith(":.keel.json"):
+            return '{"requireChangelog": true}'   # ...but the base says on
+        if args[:1] == ["merge-base"]:
+            return "abc123\n"
+        if args[:1] == ["show"]:
+            return changelog
+        return None
+
+    monkeypatch.setattr(cc, "_run_git", fake_run_git)
+    rc = cc.main(["prog", "main", "feature/x"])
+    assert rc == 1
+    assert "::error::" in capsys.readouterr().out
+
+
+def test_require_changelog_false_at_the_base_still_disables_the_gate(
+        tmp_path, monkeypatch, capsys):
+    # The legitimate way to turn it off: land the config change first.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n")
+    monkeypatch.setattr(cc, "_run_git", _cfg_at_base('{"requireChangelog": false}'))
+    rc = cc.main(["prog", "main", "feature/x"])
+    assert rc == 0
+    assert "not required" in capsys.readouterr().out
+
+
+def test_config_absent_at_base_falls_back_to_the_working_tree(
+        tmp_path, monkeypatch, capsys):
+    # Adopting keel: the PR that introduces .keel.json has no config at the
+    # base to read. There is nothing to bypass yet -- you cannot disable a
+    # gate that was never enabled -- so the branch's own config is honoured.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".keel.json").write_text('{"requireChangelog": false}')
+    (tmp_path / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n")
+
+    monkeypatch.setattr(cc, "_run_git", lambda args: None)  # nothing at base
+    rc = cc.main(["prog", "main", "feature/x"])
+    assert rc == 0
+    assert "not required" in capsys.readouterr().out
+
+
+# --- "gained content" must mean gained, not merely differs ----------------
+
+
+def test_deleting_an_unreleased_entry_does_not_pass_the_gate(
+        tmp_path, monkeypatch, capsys):
+    # The check was `before != after`, so removing a line counted as having
+    # gained content -- and the success message said so out loud.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n\n### Added\n- one\n")
+    before = "# Changelog\n\n## [Unreleased]\n\n### Added\n- one\n- two\n"
+
+    def fake_run_git(args):
+        if args[:1] == ["show"] and args[1].endswith(":.keel.json"):
+            return None
+        if args[:1] == ["merge-base"]:
+            return "abc123\n"
+        if args[:1] == ["show"]:
+            return before
+        return None
+
+    monkeypatch.setattr(cc, "_run_git", fake_run_git)
+    rc = cc.main(["prog", "main", "feature/x"])
+    assert rc == 1
+    assert "::error::" in capsys.readouterr().out
+
+
+def test_rewording_an_entry_still_counts_as_content(tmp_path, monkeypatch):
+    # An edit that replaces a line adds a line the base didn't have, which
+    # is a real changelog contribution -- don't over-tighten into rejecting
+    # it.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n\n### Added\n- one, clarified\n")
+    before = "# Changelog\n\n## [Unreleased]\n\n### Added\n- one\n"
+
+    def fake_run_git(args):
+        if args[:1] == ["show"] and args[1].endswith(":.keel.json"):
+            return None
+        if args[:1] == ["merge-base"]:
+            return "abc123\n"
+        if args[:1] == ["show"]:
+            return before
+        return None
+
+    monkeypatch.setattr(cc, "_run_git", fake_run_git)
+    assert cc.main(["prog", "main", "feature/x"]) == 0

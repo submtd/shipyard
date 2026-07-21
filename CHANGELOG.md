@@ -43,6 +43,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   against the protected set, never matched, and a direct push to production
   from production was allowed. An unresolvable branch warns rather than
   allowing.
+- The CI changelog gate could be switched off by the very PR it was
+  gating. `load_cfg` read `.keel.json` from the working tree, which in CI
+  is the PR's own head checkout, so a branch that included
+  `requireChangelog: false` exempted itself. The config is now read from
+  the base ref, which only already-merged (already-reviewed) code can
+  change. A repo with no config at the base still falls back to the
+  working tree -- that's the PR adopting keel, and there is no
+  already-enabled gate to bypass.
+- The changelog gate treated "gained content" as "differs from base", so a
+  PR that only *deleted* an Unreleased entry passed -- and was told its
+  changelog had gained content. It now requires at least one non-blank
+  Unreleased line the base did not have. Rewording an entry still counts.
+- The `changelog` workflow now declares `permissions: contents: read`,
+  matching `ci.yml` and `security.yml`. Without it the job inherited the
+  repository's default `GITHUB_TOKEN` scope, which is write-capable unless
+  the repo says otherwise. Fixed in the `keel:init` template too, so the
+  gap stops propagating into every repo keel scaffolds.
 
 ### Added
 

@@ -1,4 +1,9 @@
 name: changelog
+# Least privilege: this job only reads the repo and reports a status.
+# Without an explicit block the job inherits the repository default,
+# which is write-scoped in any repo not configured otherwise.
+permissions:
+  contents: read
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
