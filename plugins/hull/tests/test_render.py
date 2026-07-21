@@ -45,9 +45,9 @@ def test_every_scalar_value_is_quoted():
 
     assert 'name: "security"' in out
     assert 'runs-on: "ubuntu-latest"' in out
-    assert 'uses: "actions/checkout@v4"' in out
+    assert 'uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"' in out
     assert 'fetch-depth: "0"' in out
-    assert 'uses: "gitleaks/gitleaks-action@v2"' in out
+    assert 'uses: "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7"' in out
     assert 'GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"' in out
 
 
@@ -91,6 +91,6 @@ def test_iter_run_blocks_block_scalar_ends_at_next_step():
         "      - run: |\n"
         "          line one\n"
         "          line two\n"
-        '      - uses: "actions/checkout@v4"\n'
+        '      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"\n'
     )
     assert iter_run_blocks(text) == ["line one\nline two"]

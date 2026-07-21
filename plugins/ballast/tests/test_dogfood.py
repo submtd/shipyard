@@ -42,12 +42,10 @@ def test_rendered_testpaths_include_every_plugin():
     # present catches that silent narrowing here instead.
     config = load_config(REPO)
     rendered = render(config)
-    for plugin_tests in [
-        "plugins/keel/tests",
-        "plugins/rigging/tests",
-        "plugins/stow/tests",
-        "plugins/ballast/tests",
-        "plugins/hull/tests",
-        "plugins/bosun/tests",
-    ]:
-        assert plugin_tests in rendered
+    # Derived from disk, not hardcoded: a hardcoded list is itself a way
+    # for a plugin to escape the check -- a seventh plugin would be added
+    # to the repo and silently omitted here.
+    plugin_dirs = sorted(p.name for p in (REPO / "plugins").iterdir() if p.is_dir())
+    assert plugin_dirs, "no plugins found -- this test would pass vacuously"
+    for name in plugin_dirs:
+        assert f"plugins/{name}/tests" in rendered

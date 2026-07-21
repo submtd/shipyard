@@ -13,6 +13,15 @@ CONFIG_NAME = ".ballast.json"
 
 IMPORT_MODES = ("importlib", "prepend", "append")
 
+#: Accepted keys. An unknown key is an error, not something to ignore: the
+#: rendered pytest.ini spells these lowercase (testpaths, pythonpath,
+#: addopts), so mirroring the rendered names here instead of the camelCase
+#: config names is the natural mistake -- and silently discarding it leaves
+#: pytest scanning the whole tree, a symptom that shows up nowhere near the
+#: cause.
+TOP_LEVEL_KEYS = frozenset({"stacks"})
+STACK_KEYS = frozenset({"testPaths", "pythonPath", "importMode", "addOpts"})
+
 # Charset check only: non-empty, no whitespace anywhere in the string. The
 # structural rules (no leading "/", no ".." segment, no leading "#"/";") are
 # enforced separately in _valid_path so the error messages can be specific
@@ -29,11 +38,28 @@ IMPORT_MODES = ("importlib", "prepend", "append")
 # as a COMMENT and strips it -- a testPaths/pythonPath entry of "#unit" or
 # ";src" would render into pytest.ini and then be silently dropped, leaving
 # testpaths empty and pytest scanning the whole tree.
-PATH_RE = re.compile(r"\S+")
+#
+# Quotes and the other shell-significant characters are excluded for a
+# sharper reason than the ones above: pytest does not merely tokenize these
+# values on whitespace, it *shlex-splits* them. An unbalanced quote is fatal
+# to the entire run -- shlex raises ValueError("No closing quotation") from
+# inside pytest's own config layer, before collection starts, so the user
+# gets a traceback rather than a bad value. A plain \S+ let that through:
+#
+#     {"stacks": {"python": {"addOpts": ["-k'foo"]}}}
+#       -> addopts = --import-mode=importlib -k'foo
+#       -> pytest --collect-only: ValueError: No closing quotation
+#
+# Rendering a pytest.ini that stops pytest from starting is precisely the
+# failure ballast exists to prevent, so the charset excludes every character
+# that changes how the value is tokenized downstream.
+_SHLEX_SIGNIFICANT = "'\"\\`$"
 
-# A non-empty token with no whitespace/newline, e.g. "-q", "--strict-markers",
-# "--cov=x".
-FLAG_RE = re.compile(r"\S+")
+PATH_RE = re.compile(rf"[^\s{re.escape(_SHLEX_SIGNIFICANT)}]+")
+
+# A non-empty token with no whitespace/newline and nothing shlex-significant,
+# e.g. "-q", "--strict-markers", "--cov=x".
+FLAG_RE = re.compile(rf"[^\s{re.escape(_SHLEX_SIGNIFICANT)}]+")
 
 
 class ConfigError(Exception):
@@ -77,7 +103,8 @@ def _valid_paths(value, stack_id, field, *, allow_empty: bool) -> tuple[str, ...
         if not _valid_path(entry):
             raise ConfigError(
                 f"{CONFIG_NAME}: 'stacks.{stack_id}.{field}' entries must be "
-                f"relative path strings with no whitespace, no leading '/', "
+                f"relative path strings with no whitespace, no quotes or "
+                f"other shell-significant characters, no leading '/', "
                 f"no leading '#' or ';', and no '..' segment (got {entry!r})."
             )
         paths.append(entry)
@@ -104,7 +131,8 @@ def _valid_add_opts(value, stack_id) -> tuple[str, ...]:
         if not isinstance(entry, str) or not FLAG_RE.fullmatch(entry):
             raise ConfigError(
                 f"{CONFIG_NAME}: 'stacks.{stack_id}.addOpts' entries must be "
-                f"non-empty tokens with no whitespace (got {entry!r})."
+                f"non-empty tokens with no whitespace and no quotes or "
+                f"other shell-significant characters (got {entry!r})."
             )
         opts.append(entry)
     return tuple(opts)
@@ -120,6 +148,13 @@ def load_config(root: Path) -> Optional[Config]:
         raise ConfigError(f"{CONFIG_NAME} could not be read: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"{CONFIG_NAME} must contain a JSON object.")
+
+    unknown_top = set(raw) - TOP_LEVEL_KEYS
+    if unknown_top:
+        raise ConfigError(
+            f"{CONFIG_NAME}: unknown key(s) {', '.join(sorted(unknown_top))}. "
+            f"Allowed keys: {', '.join(sorted(TOP_LEVEL_KEYS))}."
+        )
 
     stacks_raw = raw.get("stacks")
     if not isinstance(stacks_raw, dict) or not stacks_raw:
@@ -141,6 +176,13 @@ def load_config(root: Path) -> Optional[Config]:
                 f"JSON object (got {stack_value!r})."
             )
         stack_value = stack_value or {}
+        unknown = set(stack_value) - STACK_KEYS
+        if unknown:
+            raise ConfigError(
+                f"{CONFIG_NAME}: unknown key(s) "
+                f"{', '.join(sorted(unknown))} in 'stacks.{stack_id}'. "
+                f"Allowed keys: {', '.join(sorted(STACK_KEYS))}."
+            )
         spec = stacks.REGISTRY[stack_id]
 
         test_paths_raw = stack_value.get("testPaths")

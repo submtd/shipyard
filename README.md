@@ -274,38 +274,38 @@ CI runs the suite on Python 3.9 and 3.12.
 
 ## Status
 
-`keel` is v0.2.0 and covers the git lifecycle. `keel:init` has shipped —
+`keel` is v0.3.0 and covers the git lifecycle. `keel:init` has shipped —
 it scaffolds keel's lifecycle artifacts (`.keel.json`, a changelog,
 PR/issue templates, CODEOWNERS, the changelog CI gate, and an optional
 license) into a repo.
 
-`rigging` is v0.1.0 and has shipped as Shipyard's second plugin: CI pipeline
+`rigging` is v0.3.0 and has shipped as Shipyard's second plugin: CI pipeline
 authoring for `python` and `node` repos, via `rigging:init`. It's dogfooded
 on this repo — this repo's own [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 is rendered by rigging from its [`.rigging.json`](.rigging.json).
 
-`stow` is v0.1.0 and has shipped as Shipyard's third plugin: it manages
+`stow` is v0.3.0 and has shipped as Shipyard's third plugin: it manages
 `.gitignore` sections per detected stack (`base`/`python`/`node`) via a
 managed-block splice — idempotent, updatable in place, and it never
 clobbers user-custom lines — via `stow:init`. It's dogfooded on this repo —
 this repo's own [`.gitignore`](.gitignore) is stow's rendered output from
 its [`.stow.json`](.stow.json).
 
-`ballast` is v0.1.0 and has shipped as Shipyard's fourth plugin: it renders
+`ballast` is v0.3.0 and has shipped as Shipyard's fourth plugin: it renders
 `pytest.ini` from a committed `.ballast.json` — import-mode, testpaths,
 pythonpath — so pytest collects the right tests, via `ballast:init`.
 Python-only in this increment. It's dogfooded on this repo — this repo's own
 [`pytest.ini`](pytest.ini) is ballast's rendered output from its
 [`.ballast.json`](.ballast.json).
 
-`hull` is v0.1.0 and has shipped as Shipyard's fifth plugin: it renders an
+`hull` is v0.3.0 and has shipped as Shipyard's fifth plugin: it renders an
 injection-safe gitleaks secret-scan `.github/workflows/security.yml` from a
 committed `.hull.json`, via `hull:init`. Stack-agnostic — a secret scanner
 runs the same way regardless of language. It's dogfooded on this repo —
 this repo's own [`security.yml`](.github/workflows/security.yml) is hull's
 rendered output from its [`.hull.json`](.hull.json).
 
-`bosun` is v0.1.0 and has shipped as Shipyard's sixth plugin: it renders
+`bosun` is v0.3.0 and has shipped as Shipyard's sixth plugin: it renders
 an injection-free `.github/dependabot.yml` from a committed `.bosun.json`
 via `bosun:init`. github-actions is always-on (every plugin-using repo
 pins action refs); pip/npm are added when detected. It's dogfooded on this

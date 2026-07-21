@@ -179,3 +179,24 @@ def test_classify_files_both_absent(tmp_path):
         ".bosun.json": "absent",
         ".github/dependabot.yml": "absent",
     }
+
+
+# --- propose_config key order --------------------------------------------
+#
+# build_plan and render are both order-defended (their key-order tests fail
+# under a set-iterating mutation). propose_config was not, and it writes the
+# *other* committed artifact: .bosun.json. Its stability came only from
+# iterating REGISTRY, which nothing pinned -- every assertion compared
+# dicts with ==, which ignores key order, so a set-iterating refactor kept
+# the whole suite green while making the written file vary per run.
+
+
+def test_proposed_ecosystem_order_is_registry_order_not_input_order():
+    cfg = propose_config({"ecosystems": ["python", "node"]})
+    assert list(cfg["ecosystems"]) == ["githubActions", "python", "node"]
+
+
+def test_proposed_order_is_independent_of_input_order():
+    forward = propose_config({"ecosystems": ["python", "node"]})
+    reversed_ = propose_config({"ecosystems": ["node", "python"]})
+    assert list(forward["ecosystems"]) == list(reversed_["ecosystems"])

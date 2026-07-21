@@ -114,13 +114,23 @@ function call, just with different `existing_text`. So there's no separate
 "does `.gitignore` exist yet" branch here — read it if it's there, pass
 `""` if it isn't, and let `apply_blocks` do the rest:
 
-    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from pathlib import Path; from stow.config import load_config; from stow.scaffold import desired_sections; from stow.blocks import apply_blocks; p=Path('.gitignore'); existing=p.read_text() if p.exists() else ''; p.write_text(apply_blocks(existing, desired_sections(load_config(Path('.')))))"
+    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from pathlib import Path; from stow.config import load_config; from stow.scaffold import desired_sections; from stow.blocks import apply_blocks; from stow.fileio import read_managed_file, write_managed_file; write_managed_file('.gitignore', apply_blocks(read_managed_file('.gitignore'), desired_sections(load_config(Path('.')))))"
+
+Use `stow.fileio` for both halves rather than `Path.read_text`/`write_text`.
+It reads and writes UTF-8 explicitly and swaps the file in atomically. A
+bare `write_text` truncates before it encodes, so on a locale whose
+preferred codec isn't UTF-8 the advisory line's em dash raises *after* the
+user's `.gitignore` is already empty — that is exactly the data loss this
+step exists to avoid.
 
 What this does, concretely:
 
 - Every line the user wrote themselves, **outside** a `# >>> stow:<id> >>>`
-  / `# <<< stow:<id> <<<` pair, is preserved byte-for-byte — same position,
+  / `# <<< stow:<id> <<<` pair, is preserved — same text, same position,
   same blank-line formatting. stow never reorders or touches free lines.
+  The one exception is line endings: a CRLF file is normalized to LF
+  throughout, so on a Windows checkout this step shows up as a whole-file
+  diff. Say so before writing if the file has CRLF endings.
 - Each stack in `.stow.json` (plus `base`, always) gets a managed block: an
   opener, a fixed advisory comment (`# managed by stow — edits inside this
   block are overwritten; put custom entries outside it`), the stack's
@@ -160,8 +170,8 @@ Prove the write converged and the file is well-formed:
       from stow.config import load_config
       from stow.scaffold import desired_sections
       from stow.blocks import apply_blocks
-      p = Path('.gitignore')
-      text = p.read_text()
+      from stow.fileio import read_managed_file
+      text = read_managed_file('.gitignore')
       again = apply_blocks(text, desired_sections(load_config(Path('.'))))
       assert again == text, 'not idempotent'
       print('ok: idempotent')
@@ -174,7 +184,8 @@ Prove the write converged and the file is well-formed:
       sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}')
       from pathlib import Path
       from stow.blocks import find_blocks
-      _, malformed = find_blocks(Path('.gitignore').read_text())
+      from stow.fileio import read_managed_file
+      _, malformed = find_blocks(read_managed_file('.gitignore'))
       assert not malformed, malformed
       print('ok: no malformed markers')
       "

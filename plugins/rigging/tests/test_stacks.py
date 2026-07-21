@@ -1,3 +1,4 @@
+import re
 import pytest
 
 from rigging import stacks
@@ -6,7 +7,7 @@ from rigging.stacks import REGISTRY, STACK_IDS, Step, StackSpec
 
 def test_rigging_version():
     import rigging
-    assert rigging.__version__ == "0.1.0"
+    assert rigging.__version__ == "0.3.0"
 
 
 def test_registry_keys():
@@ -64,7 +65,7 @@ PYTHON_INSTALL_RUN = (
 def test_python_spec_contents():
     spec = REGISTRY["python"]
     assert spec.detect_files == ("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt")
-    assert spec.setup_uses == "actions/setup-python@v5"
+    assert spec.setup_uses == "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065"
     assert spec.matrix_var == "python"
     assert spec.setup_with_key == "python-version"
     assert spec.default_versions == ("3.12",)
@@ -89,7 +90,7 @@ def test_python_install_step_matches_github_starter_workflow_shape():
 def test_node_spec_contents():
     spec = REGISTRY["node"]
     assert spec.detect_files == ("package.json",)
-    assert spec.setup_uses == "actions/setup-node@v5"
+    assert spec.setup_uses == "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444"
     assert spec.matrix_var == "node"
     assert spec.setup_with_key == "node-version"
     assert spec.default_versions == ("20",)
@@ -106,3 +107,29 @@ def test_stackspec_is_frozen_dataclass():
     spec = REGISTRY["python"]
     with pytest.raises(Exception):
         spec.id = "changed"
+
+
+# --- action refs must be SHA pins ----------------------------------------
+
+_SHA_PIN = re.compile(r"[^@\s]+@[0-9a-f]{40}")
+
+
+def test_every_registry_action_ref_is_a_sha_pin():
+    """A moving tag (`@v4`) is repointable by the action's owner, so it is
+    not a pin no matter what the docs call it. Every ref rigging emits must
+    name an immutable commit."""
+    from rigging.plan import CHECKOUT_STEP
+
+    refs = [CHECKOUT_STEP.uses] + [spec.setup_uses for spec in REGISTRY.values()]
+    for ref in refs:
+        assert _SHA_PIN.fullmatch(ref), f"{ref} is not pinned to a commit SHA"
+
+
+def test_every_pinned_ref_carries_a_version_comment():
+    # The SHA is unreadable alone; the trailing comment is what keeps it
+    # reviewable and what Dependabot bumps alongside the pin.
+    from rigging.plan import CHECKOUT_STEP
+
+    assert CHECKOUT_STEP.uses_version
+    for spec in REGISTRY.values():
+        assert spec.setup_uses_version

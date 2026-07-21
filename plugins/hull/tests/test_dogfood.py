@@ -45,7 +45,7 @@ def test_security_yml_matches_rendered_output_byte_for_byte():
 
 
 def test_security_yml_uses_gitleaks_action_v2():
-    assert "gitleaks/gitleaks-action@v2" in _rendered()
+    assert "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7" in _rendered()
 
 
 def test_security_yml_only_whitelisted_expression():

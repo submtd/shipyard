@@ -55,7 +55,17 @@ def _step_lines(step) -> list[str]:
             return lines
         return [f"      - run: {_quote(step.run)}"]
 
-    lines = [f"      - uses: {_quote(step.uses)}"]
+    lines = []
+    if step.name:
+        lines.append(f"      - name: {_quote(step.name)}")
+        lines.append(f"        uses: {_quote(step.uses)}")
+    else:
+        uses_line = f"      - uses: {_quote(step.uses)}"
+        if step.uses_version:
+            uses_line += f"  # {step.uses_version}"
+        lines.append(uses_line)
+    if step.name and step.uses_version:
+        lines[-1] += f"  # {step.uses_version}"
     if step.with_:
         lines.append("        with:")
         for key, value in step.with_.items():

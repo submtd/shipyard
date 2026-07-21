@@ -7,7 +7,13 @@ Regenerate with:
     python3 -c "import sys; sys.path.insert(0,'plugins/stow'); \
 from stow.config import load_config; from stow.scaffold import desired_sections; \
 from stow.blocks import apply_blocks; from pathlib import Path; \
-p=Path('.gitignore'); p.write_text(apply_blocks(p.read_text(), desired_sections(load_config(Path('.')))))"
+from stow.fileio import read_managed_file, write_managed_file; \
+write_managed_file('.gitignore', apply_blocks(read_managed_file('.gitignore'), \
+desired_sections(load_config(Path('.')))))"
+
+Note this goes through stow.fileio, same as the skill: a bare
+Path.write_text truncates before it encodes, so under a non-UTF-8 locale
+regenerating would empty this repo's own .gitignore.
 """
 from __future__ import annotations
 
@@ -15,6 +21,7 @@ from pathlib import Path
 
 from stow.blocks import apply_blocks, find_blocks
 from stow.config import load_config
+from stow.fileio import read_managed_file
 from stow.scaffold import desired_sections
 
 REPO = Path(__file__).resolve().parents[3]
@@ -25,7 +32,7 @@ def test_gitignore_matches_rendered_output_byte_for_byte():
     # shipyard's own .stow.json against the committed .gitignore must be a
     # no-op. If this ever fails, the committed .gitignore has drifted from
     # what stow itself would produce.
-    text = (REPO / ".gitignore").read_text()
+    text = read_managed_file(REPO / ".gitignore")
     assert apply_blocks(text, desired_sections(load_config(REPO))) == text
 
 
@@ -33,7 +40,7 @@ def test_superpowers_line_is_present_and_free():
     # `.superpowers/` is shipyard's one repo-custom line -- it predates
     # stow and must survive the migration as a free line, untouched by any
     # managed block.
-    text = (REPO / ".gitignore").read_text()
+    text = read_managed_file(REPO / ".gitignore")
     lines = text.split("\n")
     assert ".superpowers/" in lines
 

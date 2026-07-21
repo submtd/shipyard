@@ -10,7 +10,10 @@ from dataclasses import dataclass
 
 from rigging import config, stacks
 
-CHECKOUT_STEP = stacks.Step(uses="actions/checkout@v4")
+CHECKOUT_STEP = stacks.Step(
+    uses="actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+    uses_version="v4",
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,7 @@ def _build_job(stack_id: str, versions: tuple[str, ...]) -> Job:
     spec = stacks.REGISTRY[stack_id]
     setup_step = stacks.Step(
         uses=spec.setup_uses,
+        uses_version=spec.setup_uses_version,
         with_={spec.setup_with_key: "${{ matrix.%s }}" % spec.matrix_var},
     )
     return Job(

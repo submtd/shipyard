@@ -7,9 +7,22 @@ description: Use when beginning any new change - creates a correctly-named branc
 
 ## 1. Read the config
 
-Read `.keel.json` at the repo root. You need `topology`, `branches`, `prefixes`,
-and `contributions`. If the file is absent, this repo is not keel-managed - say
-so and stop.
+Read the config at the repo root. You need `topology`, `branches`,
+`prefixes`, and `contributions`. If `.keel.json` is absent, this repo is not
+keel-managed - say so and stop.
+Load it through keel's own loader rather than reading the raw JSON:
+
+    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from keel.config import load_config; from pathlib import Path; print(load_config(Path('.')))"
+
+This matters because `keel:init` writes only the keys it detected --
+`topology`, `branches`, `contributions`, `reviewPolicy`, `requireChangelog`.
+`prefixes` and `mergeStrategy` are normally **absent** from the file, and
+the loader is what supplies their defaults (`feature/`, `release/`,
+`hotfix/`; `squash` into integration, `merge` into production). Read the raw
+file and you will see nothing for those fields and have to guess -- and a
+guess that disagrees with the loader produces a `merge-strategy` or
+`pr-edge` block you cannot explain.
+
 
 ## 2. Decide the branch kind
 

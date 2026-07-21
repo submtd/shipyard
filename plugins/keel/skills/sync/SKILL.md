@@ -7,7 +7,9 @@ description: Use when a branch or fork has fallen behind its base, or before ope
 
 ## 1. Work out what is stale
 
-Read `.keel.json`. Work out the base branch from the current branch's prefix:
+Load the config (`keel.config.load_config`, as in `keel:start-work` - it
+supplies the prefix defaults that `.keel.json` usually omits). Work out the
+base branch from the current branch's prefix:
 `integration` for a feature branch, `production` for a hotfix (or, under
 `trunk` topology, `production` in both cases). Work out which remote holds the
 canonical repo: `upstream` if you're on a fork (per `keel:start-work`),

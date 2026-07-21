@@ -30,7 +30,12 @@ def gather(action, cwd, cfg, branch):
         changelog_ok = Tri.of(
             gitio.changelog_gained_content(action.base or cfg.integration, cwd=cwd))
         changelog_present = Tri.of(gitio.changelog_present(cwd=cwd))
-    pr = ghio.pr_facts(action.pr_number, cwd=cwd) if action.kind == "pr-merge" else None
+    # action.repo carries an explicit `--repo`/`-R`. It must reach gh, or
+    # a cross-repo command is judged against the LOCAL repo's PR of the
+    # same number -- a different PR, so the review and merge-strategy
+    # gates return a confident wrong answer instead of an honest unknown.
+    pr = (ghio.pr_facts(action.pr_number, cwd=cwd, repo=action.repo)
+          if action.kind == "pr-merge" else None)
     # NB: pr_facts() returns None when `gh` itself failed (unreachable,
     # timeout, not found) -- distinct from a successful call whose PR
     # genuinely has no review yet (which returns a dict with
@@ -43,7 +48,8 @@ def gather(action, cwd, cfg, branch):
     # test_failed_gh_call_warns_not_blocks_on_merge, which pins this down.
     return Facts(
         branch=branch,
-        capability=ghio.capability(cwd=cwd) if action.kind == "pr-merge" else Tri.UNKNOWN,
+        capability=(ghio.capability(cwd=cwd, repo=action.repo)
+                    if action.kind == "pr-merge" else Tri.UNKNOWN),
         pr_base=(pr or {}).get("base"),
         pr_head=(pr or {}).get("head"),
         pr_is_fork=(pr or {}).get("is_fork", Tri.UNKNOWN),

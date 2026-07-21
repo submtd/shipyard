@@ -29,6 +29,11 @@ def _warn(rule, message):
     return Verdict("warn", rule, message)
 
 
+#: Refspec destinations that mean "whatever branch is checked out" rather
+#: than naming a branch. '@' is git's documented shorthand for HEAD.
+_HEAD_ALIASES = frozenset({"HEAD", "@"})
+
+
 def _protected(cfg):
     return {cfg.production, cfg.integration}
 
@@ -70,6 +75,18 @@ def _rule_protected_write(action, facts, cfg):
         return ALLOW
 
     if action.kind == "push":
+        if action.pushes_every_branch:
+            # --all/--mirror write every local branch regardless of refspec
+            # or where HEAD is, so this blocks even on an unknown branch:
+            # what it pushes doesn't depend on facts we might be missing.
+            # Names cfg.production rather than a member of `protected`:
+            # that set is unordered, and a verdict message must be
+            # deterministic.
+            return _block("protected-write",
+                          f"This pushes every local branch, including "
+                          f"protected branch '{cfg.production}'. Push the "
+                          f"one branch you mean, and open a PR "
+                          f"(keel:finish-work).")
         if not action.refs:
             # 'git push' with no refspec pushes the current branch.
             if facts.branch is None:
@@ -80,6 +97,18 @@ def _rule_protected_write(action, facts, cfg):
             # Tag refs are exempt -- but only the tag refs themselves. A branch
             # ref in the same command is still checked.
             targets = [r.dst for r in action.refs if not r.is_tag]
+            # 'git push origin HEAD' names the current branch, but 'HEAD' was
+            # compared literally against the protected set and never matched,
+            # so a direct push to production from production was allowed. If
+            # the branch is unknown we can't resolve it -- warn rather than
+            # confidently allow, matching the no-refspec case above.
+            if any(t in _HEAD_ALIASES for t in targets):
+                if facts.branch is None:
+                    return _warn("protected-write",
+                                 "Could not determine what this push targets.")
+                targets = [
+                    facts.branch if t in _HEAD_ALIASES else t for t in targets
+                ]
         hits = [t for t in targets if t in protected]
         if hits:
             return _block("protected-write",

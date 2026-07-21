@@ -10,6 +10,16 @@ from stow import stacks
 
 CONFIG_NAME = ".stow.json"
 
+#: Accepted keys. An unknown key is an error rather than something to
+#: ignore: silently dropping it means the user believes they configured
+#: something they didn't, and the resulting behaviour change surfaces far
+#: from its cause.
+#: Stack values carry no options yet, so the allowed set is empty --
+#: accepting a key and then never reading it would be the same lie.
+TOP_LEVEL_KEYS = frozenset({"stacks"})
+STACK_KEYS = frozenset()
+
+
 
 class ConfigError(Exception):
     """Raised when .stow.json exists but cannot be used."""
@@ -25,11 +35,21 @@ def load_config(root: Path) -> Optional[Config]:
     if not path.is_file():
         return None
     try:
-        raw = json.loads(path.read_text())
+        # encoding is explicit: JSON is UTF-8 by definition, and reading it
+        # with the locale's preferred codec turns a valid config into a
+        # ConfigError on any non-UTF-8 machine.
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ConfigError(f"{CONFIG_NAME} could not be read: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"{CONFIG_NAME} must contain a JSON object.")
+
+    unknown = set(raw) - TOP_LEVEL_KEYS
+    if unknown:
+        raise ConfigError(
+            f"{CONFIG_NAME}: unknown key(s) {', '.join(sorted(unknown))}. "
+            f"Allowed keys: {', '.join(sorted(TOP_LEVEL_KEYS))}."
+        )
 
     stacks_raw = raw.get("stacks")
     if not isinstance(stacks_raw, dict):
@@ -51,6 +71,14 @@ def load_config(root: Path) -> Optional[Config]:
                 f"{CONFIG_NAME}: 'stacks.{stack_id}' must be null or a "
                 f"JSON object (got {stack_value!r})."
             )
-        resolved[stack_id] = stack_value or {}
+        stack_value = stack_value or {}
+        unknown_stack = set(stack_value) - STACK_KEYS
+        if unknown_stack:
+            raise ConfigError(
+                f"{CONFIG_NAME}: unknown key(s) "
+                f"{', '.join(sorted(unknown_stack))} in 'stacks.{stack_id}'. "
+                f"Stack values take no options; use an empty object or null."
+            )
+        resolved[stack_id] = stack_value
 
     return Config(stacks=resolved)

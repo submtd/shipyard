@@ -8,6 +8,19 @@ from typing import Optional
 
 CONFIG_NAME = ".keel.json"
 
+#: Accepted keys. An unknown key is an error rather than something to
+#: ignore: silently dropping it means the user believes they configured
+#: something they didn't, and the resulting behaviour change surfaces far
+#: from its cause.
+TOP_LEVEL_KEYS = frozenset({
+    "topology", "branches", "prefixes", "mergeStrategy",
+    "contributions", "reviewPolicy", "requireChangelog",
+})
+BRANCHES_KEYS = frozenset({"production", "integration"})
+PREFIXES_KEYS = frozenset({"feature", "release", "hotfix"})
+MERGE_STRATEGY_KEYS = frozenset({"toIntegration", "toProduction"})
+
+
 TOPOLOGIES = ("gitflow", "trunk")
 CONTRIBUTIONS = ("fork", "branch", "both")
 REVIEW_POLICIES = ("approval", "review", "none")
@@ -63,6 +76,16 @@ def _non_empty_string(value, field):
     return value
 
 
+def _reject_unknown(mapping, allowed, where):
+    """Raise naming any key of `mapping` outside `allowed`."""
+    unknown = set(mapping) - allowed
+    if unknown:
+        raise ConfigError(
+            f"{CONFIG_NAME}: unknown key(s) {', '.join(sorted(unknown))} "
+            f"in '{where}'. Allowed keys: {', '.join(sorted(allowed))}."
+        )
+
+
 def load_config(repo_root: Path) -> Optional[Config]:
     path = Path(repo_root) / CONFIG_NAME
     if not path.is_file():
@@ -74,21 +97,31 @@ def load_config(repo_root: Path) -> Optional[Config]:
     if not isinstance(raw, dict):
         raise ConfigError(f"{CONFIG_NAME} must contain a JSON object.")
 
+    unknown = set(raw) - TOP_LEVEL_KEYS
+    if unknown:
+        raise ConfigError(
+            f"{CONFIG_NAME}: unknown key(s) {', '.join(sorted(unknown))}. "
+            f"Allowed keys: {', '.join(sorted(TOP_LEVEL_KEYS))}."
+        )
+
     # Validate nested object fields
     branches_raw = raw.get("branches")
     if branches_raw is not None and not isinstance(branches_raw, dict):
         raise ConfigError(f"{CONFIG_NAME}: 'branches' must be a JSON object (got {type(branches_raw).__name__}).")
     branches = branches_raw or {}
+    _reject_unknown(branches, BRANCHES_KEYS, "branches")
 
     prefixes_raw = raw.get("prefixes")
     if prefixes_raw is not None and not isinstance(prefixes_raw, dict):
         raise ConfigError(f"{CONFIG_NAME}: 'prefixes' must be a JSON object (got {type(prefixes_raw).__name__}).")
     prefixes = prefixes_raw or {}
+    _reject_unknown(prefixes, PREFIXES_KEYS, "prefixes")
 
     merge_strategy_raw = raw.get("mergeStrategy")
     if merge_strategy_raw is not None and not isinstance(merge_strategy_raw, dict):
         raise ConfigError(f"{CONFIG_NAME}: 'mergeStrategy' must be a JSON object (got {type(merge_strategy_raw).__name__}).")
     strategy = merge_strategy_raw or {}
+    _reject_unknown(strategy, MERGE_STRATEGY_KEYS, "mergeStrategy")
 
     topology = _one_of(raw.get("topology", "gitflow"), TOPOLOGIES, "topology")
     production = _non_empty_string(branches.get("production", "main"), "branches.production")

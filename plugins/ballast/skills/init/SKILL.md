@@ -213,8 +213,12 @@ Prove what's on disk is sound:
 
   - **(a) Tests were collected and the warning is absent.** The runner is
     correctly configured and collecting the intended suite. Report
-    success — this is what shipyard's own repo hits: all four plugin test
-    dirs exist, 708 tests collected, no warning.
+    success — this is what shipyard's own repo hits: every directory
+    listed in its `.ballast.json` `testPaths` exists, a non-zero number of
+    tests is collected, and no warning is printed. Compare against the
+    config in front of you, not against a remembered test count: the
+    number changes with every commit, so a hardcoded figure here would
+    make this check report a false failure.
 
   - **(b) The warning `No files were found in testpaths; ... Searching
     recursively from the current directory instead.` is present** —
