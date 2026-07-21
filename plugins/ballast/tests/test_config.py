@@ -105,6 +105,8 @@ def test_import_mode_outside_enum_raises(tmp_path):
     ["/abs"],
     ["../evil"],
     ["plugins/../evil"],
+    ["my tests"],
+    ["a\tb"],
 ])
 def test_invalid_test_paths_raise(tmp_path, test_paths):
     with pytest.raises(ConfigError):
@@ -116,10 +118,18 @@ def test_invalid_test_paths_raise(tmp_path, test_paths):
     ["tests\n"],
     ["/abs"],
     ["../evil"],
+    ["my path"],
 ])
 def test_invalid_python_path_entries_raise(tmp_path, python_path):
     with pytest.raises(ConfigError):
         load_config(write(tmp_path, {"stacks": {"python": {"pythonPath": python_path}}}))
+
+
+def test_test_paths_with_normal_relative_path_still_loads(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"python": {"testPaths": ["plugins/keel/tests"]}}
+    }))
+    assert cfg.stacks["python"].test_paths == ("plugins/keel/tests",)
 
 
 def test_empty_python_path_list_is_allowed(tmp_path):

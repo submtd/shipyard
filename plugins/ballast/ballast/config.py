@@ -13,12 +13,17 @@ CONFIG_NAME = ".ballast.json"
 
 IMPORT_MODES = ("importlib", "prepend", "append")
 
-# Charset check only: non-empty, no newlines anywhere in the string. The
+# Charset check only: non-empty, no whitespace anywhere in the string. The
 # structural rules (no leading "/", no ".." segment) are enforced separately
 # in _valid_path so the error messages can be specific about which rule
 # tripped. fullmatch (not match+$) so a trailing newline can't sneak past
-# the anchor -- see the fullmatch-vs-$ lesson from rigging/stow.
-PATH_RE = re.compile(r"[^\n]+")
+# the anchor -- see the fullmatch-vs-$ lesson from rigging/stow. Whitespace
+# (not just newlines) is rejected because these values land in pytest.ini's
+# testpaths/pythonpath, which pytest tokenizes on whitespace -- a path like
+# "my tests" would silently split into two nonexistent paths and pytest
+# would fall back to scanning the whole tree. Same class of value as
+# FLAG_RE (addOpts), which already excludes all whitespace.
+PATH_RE = re.compile(r"\S+")
 
 # A non-empty token with no whitespace/newline, e.g. "-q", "--strict-markers",
 # "--cov=x".
@@ -64,7 +69,7 @@ def _valid_paths(value, stack_id, field, *, allow_empty: bool) -> tuple[str, ...
         if not _valid_path(entry):
             raise ConfigError(
                 f"{CONFIG_NAME}: 'stacks.{stack_id}.{field}' entries must be "
-                f"relative path strings with no newline, no leading '/', "
+                f"relative path strings with no whitespace, no leading '/', "
                 f"and no '..' segment (got {entry!r})."
             )
         paths.append(entry)
