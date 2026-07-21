@@ -26,3 +26,11 @@ def test_multiple_python_markers_still_single_python_entry(tmp_path):
 
 def test_returns_tuple(tmp_path):
     assert isinstance(detect_stacks(tmp_path), tuple)
+
+
+def test_a_directory_named_like_a_marker_detects_nothing(tmp_path):
+    """Markers are files. A *directory* named 'pyproject.toml' -- a vendored
+    tree, an unpacked artifact, a stray mkdir -- satisfied .exists(), so a
+    whole stack was scaffolded off a path holding no configuration at all."""
+    (tmp_path / "pyproject.toml").mkdir()
+    assert detect_stacks(tmp_path) == ()

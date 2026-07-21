@@ -5,8 +5,34 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rigging.config import NAME_RE, VERSION_RE
+from rigging.config import BRANCH_RE, NAME_RE, VERSION_RE
 from rigging.stacks import STACK_IDS
+
+
+def _valid_push_branches(signals):
+    """Validate an optional `pushBranches` signal, returning it or None.
+
+    None means "omit the key entirely" so config.load_config supplies the
+    default -- writing today's default out explicitly would freeze it into
+    every scaffolded repo. Rejected here as well as in load_config because
+    propose_config's contract is that valid signals produce a config
+    load_config accepts.
+    """
+    branches = signals.get("pushBranches")
+    if branches is None:
+        return None
+    if not isinstance(branches, (tuple, list)) or not branches:
+        raise ValueError(
+            f"signals['pushBranches'] must be a non-empty list/tuple of "
+            f"branch names (got {branches!r})."
+        )
+    for branch in branches:
+        if not isinstance(branch, str) or not BRANCH_RE.fullmatch(branch):
+            raise ValueError(
+                f"signals['pushBranches'] entries must be strings matching "
+                f"{BRANCH_RE.pattern} (got {branch!r})."
+            )
+    return list(branches)
 
 
 def propose_config(signals):
@@ -68,7 +94,11 @@ def propose_config(signals):
         else:
             stacks_out[stack_id] = {}
 
-    return {"name": name, "stacks": stacks_out}
+    out = {"name": name, "stacks": stacks_out}
+    push_branches = _valid_push_branches(signals)
+    if push_branches is not None:
+        out["pushBranches"] = push_branches
+    return out
 
 
 def CI_FILES(name):

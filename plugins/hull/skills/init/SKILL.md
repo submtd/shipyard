@@ -80,6 +80,13 @@ Build a signals dict and ask the user only for what you cannot infer:
   currently the only registered scanner id
   (`hull.scanners.SCANNER_IDS == ("gitleaks",)`). No need to ask unless the
   user specifically wants to override it — there's nothing else to pick yet.
+- `pushBranches` — optional, defaults to `["main"]`. Pull requests always
+  trigger the scan, so `push` is restricted to the long-lived branches;
+  without that, every PR raised from a branch in the same repo scans twice.
+  **Check the repo's actual default branch** (`git symbolic-ref --short
+  refs/remotes/origin/HEAD`) and set this when it isn't `main` — a repo on
+  `master` that takes the default gets no push scan at all, and nothing says
+  so. Use the same value rigging's `.rigging.json` has, if it exists.
 
 Call `hull.scaffold.propose_config(signals)` to get the `.hull.json` dict,
 e.g.:

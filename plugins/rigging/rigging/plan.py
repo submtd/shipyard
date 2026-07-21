@@ -33,6 +33,8 @@ class CiPlan:
 
     name: str
     jobs: tuple[Job, ...]
+    #: Branches whose pushes trigger the workflow. See config.Config.
+    push_branches: tuple[str, ...] = config.DEFAULT_PUSH_BRANCHES
 
 
 def _build_job(stack_id: str, versions: tuple[str, ...]) -> Job:
@@ -55,4 +57,4 @@ def build_plan(cfg: config.Config) -> CiPlan:
     jobs = tuple(
         _build_job(stack_id, versions) for stack_id, versions in cfg.stacks.items()
     )
-    return CiPlan(name=cfg.name, jobs=jobs)
+    return CiPlan(name=cfg.name, jobs=jobs, push_branches=cfg.push_branches)

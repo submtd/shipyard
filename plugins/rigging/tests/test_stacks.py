@@ -57,7 +57,7 @@ def test_spec_steps_run_has_no_expression_interpolation(key):
 
 PYTHON_INSTALL_RUN = (
     "python -m pip install --upgrade pip\n"
-    "pip install pytest\n"
+    "pip install 'pytest>=8,<9'\n"
     "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
 )
 
@@ -74,7 +74,8 @@ def test_python_spec_contents():
 
 def test_python_install_step_matches_github_starter_workflow_shape():
     """The python install step mirrors GitHub's official python starter
-    workflow: upgrade pip, install pytest, and conditionally install the
+    workflow: upgrade pip, install pytest (version-bounded, so a pytest major
+    release cannot break a repo whose own code never changed), and conditionally install the
     project's own requirements.txt if present -- so CI is red only when the
     project's own tests are red, not merely because its dependencies were
     never installed."""
@@ -83,7 +84,7 @@ def test_python_install_step_matches_github_starter_workflow_shape():
     assert "\n" in install_step.run
     lines = install_step.run.split("\n")
     assert lines[0] == "python -m pip install --upgrade pip"
-    assert lines[1] == "pip install pytest"
+    assert lines[1] == "pip install 'pytest>=8,<9'"
     assert lines[2] == "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
 
 

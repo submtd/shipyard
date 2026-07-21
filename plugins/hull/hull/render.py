@@ -97,9 +97,13 @@ def render(plan: ScanPlan) -> str:
 
     Same plan in -> byte-identical text out, every call.
     """
+    branches = ", ".join(_quote(branch) for branch in plan.push_branches)
     lines = [
         f"name: {_quote(plan.name)}",
-        "on: [push, pull_request]",
+        "on:",
+        "  push:",
+        f"    branches: [{branches}]",
+        "  pull_request:",
         "permissions:",
         f"  {plan.permissions}",
         "jobs:",

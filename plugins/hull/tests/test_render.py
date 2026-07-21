@@ -56,7 +56,7 @@ def test_permissions_and_on_present():
     cfg = Config(name="security", scanner="gitleaks")
     out = render(build_plan(cfg))
 
-    assert "on: [push, pull_request]" in out
+    assert "on:\n  push:\n    branches: [\"main\"]\n  pull_request:\n" in out
     assert "permissions:\n  contents: read" in out
 
 
@@ -95,3 +95,15 @@ def test_iter_run_blocks_block_scalar_ends_at_next_step():
         f'      - uses: "{CHECKOUT_USES}"  # {CHECKOUT_VERSION}\n'
     )
     assert iter_run_blocks(text) == ["line one\nline two"]
+
+
+def test_push_is_restricted_to_the_configured_branches():
+    """Same reasoning as rigging's: `on: [push, pull_request]` ran the scan
+    twice for every PR raised from a branch in the same repo. The two
+    generators must agree on trigger shape -- a repo scaffolded by both ends
+    up with these workflows side by side."""
+    text = render(build_plan(Config(name="security", scanner="gitleaks",
+                                    push_branches=("main",))))
+    assert "on: [push, pull_request]" not in text
+    assert 'branches: ["main"]' in text
+    assert "  pull_request:" in text

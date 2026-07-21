@@ -49,3 +49,11 @@ def test_github_actions_never_detected_alongside_other_ecosystems(tmp_path):
     (workflows / "ci.yml").write_text("name: ci\n")
     (tmp_path / "package.json").write_text("{}")
     assert detect_ecosystems(tmp_path) == ("node",)
+
+
+def test_a_directory_named_like_a_marker_detects_nothing(tmp_path):
+    """Markers are files. A *directory* named 'pyproject.toml' -- a vendored
+    tree, an unpacked artifact, a stray mkdir -- satisfied .exists(), so a
+    whole stack was scaffolded off a path holding no configuration at all."""
+    (tmp_path / "pyproject.toml").mkdir()
+    assert detect_ecosystems(tmp_path) == ()

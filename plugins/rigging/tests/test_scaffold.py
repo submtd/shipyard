@@ -162,3 +162,31 @@ def test_classify_files_handles_nested_workflow_path(tmp_path):
         ".rigging.json": "absent",
         ".github/workflows/ci.yml": "present",
     }
+
+
+# --- pushBranches -------------------------------------------------------
+
+BASE_SIGNALS = {"stacks": ["python"]}
+
+
+def test_propose_config_omits_push_branches_when_not_signalled():
+    """Absent means "use the default". Writing the default out explicitly
+    would freeze today's choice into every scaffolded repo, so a later change
+    of default would reach none of them."""
+    assert "pushBranches" not in propose_config(BASE_SIGNALS)
+
+
+def test_propose_config_carries_push_branches_through(tmp_path):
+    cfg = propose_config(dict(BASE_SIGNALS, pushBranches=["master"]))
+    assert cfg["pushBranches"] == ["master"]
+    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
+    assert load_config(tmp_path).push_branches == ("master",)
+
+
+@pytest.mark.parametrize("bad", [[], "main", ["a b"], [1], ["-x"], ["a${{x}}"]])
+def test_propose_config_rejects_unrenderable_push_branches(bad):
+    """Rejected here as well as in load_config: propose_config's contract is
+    that valid signals in produce a config load_config accepts, so a value
+    it would reject must not be proposable."""
+    with pytest.raises(ValueError):
+        propose_config(dict(BASE_SIGNALS, pushBranches=bad))

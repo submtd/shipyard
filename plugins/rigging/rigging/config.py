@@ -15,7 +15,7 @@ CONFIG_NAME = ".rigging.json"
 #: ignore: silently dropping it means the user believes they configured
 #: something they didn't, and the resulting behaviour change surfaces far
 #: from its cause.
-TOP_LEVEL_KEYS = frozenset({"name", "stacks"})
+TOP_LEVEL_KEYS = frozenset({"name", "stacks", "pushBranches"})
 STACK_KEYS = frozenset({"versions"})
 
 
@@ -27,10 +27,26 @@ class ConfigError(Exception):
     """Raised when .rigging.json exists but cannot be used."""
 
 
+#: Branches whose pushes trigger CI. Pull requests always trigger it, so
+#: listing every branch here (the old `on: [push, pull_request]`) ran the
+#: whole matrix twice for any PR opened from a branch in the same repo.
+#: Restricting push to the long-lived branches keeps both signals and pays
+#: for each once. Defaults to the conventional trunk; a repo on `master` or
+#: with a `develop` line sets its own -- silently defaulting would leave it
+#: with no push CI at all.
+DEFAULT_PUSH_BRANCHES: tuple[str, ...] = ("main",)
+
+#: A git branch name, minus the ambiguous and shell-significant characters.
+#: Deliberately narrower than git's own rules: this value is rendered into
+#: YAML, so a name that needed quoting or escaping is a name we refuse.
+BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+
+
 @dataclass(frozen=True)
 class Config:
     name: str
     stacks: dict[str, tuple[str, ...]]
+    push_branches: tuple[str, ...] = DEFAULT_PUSH_BRANCHES
 
 
 def _valid_name(value, field="name"):
@@ -59,6 +75,25 @@ def _valid_versions(value, stack_id):
     return tuple(versions)
 
 
+def _valid_push_branches(value):
+    if value is None:
+        return DEFAULT_PUSH_BRANCHES
+    if not isinstance(value, list) or not value:
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'pushBranches' must be a non-empty list of "
+            f"branch names (got {value!r})."
+        )
+    branches = []
+    for branch in value:
+        if not isinstance(branch, str) or not BRANCH_RE.fullmatch(branch):
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'pushBranches' entries must be strings "
+                f"matching {BRANCH_RE.pattern} (got {branch!r})."
+            )
+        branches.append(branch)
+    return tuple(branches)
+
+
 def load_config(root: Path) -> Optional[Config]:
     path = Path(root) / CONFIG_NAME
     if not path.is_file():
@@ -78,6 +113,7 @@ def load_config(root: Path) -> Optional[Config]:
         )
 
     name = _valid_name(raw.get("name", "ci"))
+    push_branches = _valid_push_branches(raw.get("pushBranches"))
 
     stacks_raw = raw.get("stacks")
     if not isinstance(stacks_raw, dict) or not stacks_raw:
@@ -114,4 +150,4 @@ def load_config(root: Path) -> Optional[Config]:
             versions = _valid_versions(versions_raw, stack_id)
         resolved[stack_id] = versions
 
-    return Config(name=name, stacks=resolved)
+    return Config(name=name, stacks=resolved, push_branches=push_branches)
