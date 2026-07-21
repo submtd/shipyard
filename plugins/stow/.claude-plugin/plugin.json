@@ -1,0 +1,8 @@
+{
+  "name": "stow",
+  "displayName": "stow",
+  "version": "0.1.0",
+  "description": "Outfits a repo's baseline files: manages .gitignore sections per detected stack, updatable in place.",
+  "license": "MIT",
+  "keywords": ["gitignore", "scaffold", "baseline"]
+}
