@@ -1,0 +1,20 @@
+{
+  "stacks": {
+    "python": {
+      "importMode": "importlib",
+      "testPaths": [
+        "plugins/keel/tests",
+        "plugins/rigging/tests",
+        "plugins/stow/tests",
+        "plugins/ballast/tests"
+      ],
+      "pythonPath": [
+        "plugins/keel",
+        "plugins/rigging",
+        "plugins/stow",
+        "plugins/ballast"
+      ],
+      "addOpts": []
+    }
+  }
+}

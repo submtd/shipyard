@@ -20,6 +20,12 @@
       "source": "./plugins/stow",
       "description": "Outfits a repo's baseline files: manages .gitignore per detected stack, updatable in place without clobbering user lines.",
       "category": "workflow"
+    },
+    {
+      "name": "ballast",
+      "source": "./plugins/ballast",
+      "description": "Configures the pytest runner: renders pytest.ini from .ballast.json so tests resolve and collect correctly.",
+      "category": "workflow"
     }
   ]
 }

@@ -6,8 +6,10 @@ lands, and how it ships. **`rigging`** is its second: it detects a repo's
 stack and scaffolds a safe GitHub Actions CI workflow, via its `rigging:init`
 skill. **`stow`** is its third: it manages a repo's baseline files —
 `.gitignore` sections per detected stack — via its `stow:init` skill, keeping
-them updatable in place without clobbering hand-written lines. This README
-documents `keel`; rigging's and stow's usage live in their own
+them updatable in place without clobbering hand-written lines. **`ballast`**
+is its fourth: it configures the pytest runner, rendering `pytest.ini` from a
+committed `.ballast.json` via its `ballast:init` skill. This README documents
+`keel`; rigging's, stow's, and ballast's usage live in their own
 `skills/init/SKILL.md`.
 
 ## Why this exists
@@ -283,9 +285,16 @@ clobbers user-custom lines — via `stow:init`. It's dogfooded on this repo —
 this repo's own [`.gitignore`](.gitignore) is stow's rendered output from
 its [`.stow.json`](.stow.json).
 
-Planned: sibling Shipyard plugins for the domains keel, rigging, and stow
-deliberately leave alone — dependency management (`bosun`/`manifest`), test
-tooling (`ballast`), security scanning (`hull`), and debugging/profiling
+`ballast` is v0.1.0 and has shipped as Shipyard's fourth plugin: it renders
+`pytest.ini` from a committed `.ballast.json` — import-mode, testpaths,
+pythonpath — so pytest collects the right tests, via `ballast:init`.
+Python-only in this increment. It's dogfooded on this repo — this repo's own
+[`pytest.ini`](pytest.ini) is ballast's rendered output from its
+[`.ballast.json`](.ballast.json).
+
+Planned: sibling Shipyard plugins for the domains keel, rigging, stow, and
+ballast deliberately leave alone — dependency management
+(`bosun`/`manifest`), security scanning (`hull`), and debugging/profiling
 (`fathom`).
 
 ## License

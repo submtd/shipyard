@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `ballast`, Shipyard's fourth plugin: renders `pytest.ini` from a committed
+  `.ballast.json` -- import-mode, testpaths, pythonpath -- so pytest collects
+  the right tests. Python-only in this increment. Dogfooded on shipyard's own
+  bespoke `pytest.ini`.
 - `stow`, Shipyard's third plugin: manages `.gitignore` sections per
   detected stack via a managed-block splice -- idempotent, updatable in
   place, and it never clobbers user-custom lines. Ships `base`/`python`/
