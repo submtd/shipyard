@@ -305,10 +305,10 @@ runs the same way regardless of language. It's dogfooded on this repo —
 this repo's own [`security.yml`](.github/workflows/security.yml) is hull's
 rendered output from its [`.hull.json`](.hull.json).
 
-`bosun` is v0.1.0 and has shipped as Shipyard's sixth plugin — it renders
+`bosun` is v0.1.0 and has shipped as Shipyard's sixth plugin: it renders
 an injection-free `.github/dependabot.yml` from a committed `.bosun.json`
 via `bosun:init`. github-actions is always-on (every plugin-using repo
-pins action refs); pip/npm are added when detected. Dogfooded on this
+pins action refs); pip/npm are added when detected. It's dogfooded on this
 repo — this repo's own [`.github/dependabot.yml`](.github/dependabot.yml)
 is bosun's rendered output from its [`.bosun.json`](.bosun.json).
 
