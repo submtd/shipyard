@@ -38,9 +38,19 @@ else:
 The wrong strategy is blocked outright (`[merge-strategy]`), so if you're
 unsure, check the config rather than guess.
 
-Do not delete the branch on a merge into `production` - release branches are
-sometimes needed again. Deleting the branch on a merge into `integration` is
-fine and typical.
+Delete the branch or not based on **what kind of branch the head is**, not on
+what it merged into:
+
+- **Do not delete a `release/*` head** (or a `production` head being
+  back-merged) - release branches are sometimes needed again.
+- **Deleting a finished work branch is fine and typical** - `feature/*`,
+  `hotfix/*`, or any other short-lived branch.
+
+Under `gitflow` these two rules mostly line up with the base branch, because
+release branches are the things that target `production`. Under `trunk` they
+do not: `production` *is* the base for every PR, so a rule phrased as "never
+delete on a merge into production" would mean no branch is ever deletable and
+finished work branches accumulate forever. Read the head, not the base.
 
 ## 3. Report
 
