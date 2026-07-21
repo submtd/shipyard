@@ -48,6 +48,15 @@ and could stop an installed copy from updating.
 
 ### Fixed
 
+- `keel:land`'s branch-deletion rule was written for gitflow and was wrong
+  under trunk. It said "do not delete the branch on a merge into
+  `production`", whose stated reason -- release branches are sometimes
+  needed again -- is about the *head*, not the base. Under trunk
+  `production` is the base for every PR, so read literally the rule made no
+  branch ever deletable and finished work branches would accumulate
+  forever. It now keys off the head branch: keep `release/*` and back-merge
+  heads, delete finished work branches. Found by following the skill on
+  this repo's own PR #14.
 - Tests no longer restate action SHAs as literals. Seven did, so a
   legitimate upgrade meant editing seven files in lockstep — which is how
   pins go stale. They now derive from the registries, leaving exactly one
