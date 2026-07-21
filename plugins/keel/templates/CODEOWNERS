@@ -1,9 +1,13 @@
 # Every line is a file pattern followed by one or more owners.
 # Owners are notified and (with branch protection) required to review matching
-# changes. Replace the placeholder below with real GitHub usernames or teams.
+# changes.
 #
-# Example:
-#   *              @your-org/maintainers
-#   /docs/         @your-org/docs-team
-
-*  @REPLACE-WITH-OWNER
+# This file ships with NO active rules on purpose. GitHub resolves every owner
+# it finds and rejects the whole file as invalid if one does not exist, so a
+# placeholder left uncommented would break code-owner review for the repo --
+# and once `keel:protect` requires it, every pull request with it.
+#
+# Uncomment a line below and replace it with real GitHub usernames or teams:
+#
+# *              @your-org/maintainers
+# /docs/         @your-org/docs-team

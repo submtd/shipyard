@@ -20,7 +20,7 @@ GOLDEN = Path(__file__).parent / "golden"
 # silently -- if one changes without the other, these tests fail loudly.
 PYTHON_INSTALL_RUN = (
     "python -m pip install --upgrade pip\n"
-    "pip install pytest\n"
+    "pip install 'pytest>=8,<9'\n"
     "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
 )
 
@@ -188,3 +188,38 @@ def test_step_name_is_rendered_rather_than_silently_dropped():
     # entry written as Step(name=...) lost it with no error and no test.
     step = stacks.Step(name="install deps", uses="actions/checkout@" + "a" * 40)
     assert _step_lines(step)[0] == '      - name: "install deps"'
+
+
+# --- Triggers. `on: [push, pull_request]` runs the whole matrix twice for
+# every PR opened from a branch in the same repo: once for the push, once
+# for the pull_request. Restricting push to the long-lived branches keeps
+# both signals without paying for either twice. -------------------------
+
+
+def test_push_is_restricted_to_the_configured_branches():
+    text = render(build_plan(Config(name="ci", stacks={"python": ("3.12",)},
+                                    push_branches=("main",))))
+    assert "on: [push, pull_request]" not in text
+    assert 'branches: ["main"]' in text
+
+
+def test_every_configured_push_branch_is_rendered():
+    text = render(build_plan(Config(name="ci", stacks={"python": ("3.12",)},
+                                    push_branches=("main", "develop"))))
+    assert 'branches: ["main", "develop"]' in text
+
+
+def test_pull_request_stays_unrestricted():
+    text = render(build_plan(Config(name="ci", stacks={"python": ("3.12",)},
+                                    push_branches=("main",))))
+    assert "  pull_request:" in text
+
+
+def test_the_python_stack_bounds_its_pytest_version():
+    """An unpinned `pip install pytest` means a pytest major release can
+    break CI in a repo whose own code never changed. A bounded range keeps
+    patches flowing without letting a major in unannounced."""
+    text = render(build_plan(Config(name="ci", stacks={"python": ("3.12",)},
+                                    push_branches=("main",))))
+    assert "pip install pytest\n" not in text, "the bare, unbounded install"
+    assert "pytest>=8,<9" in text

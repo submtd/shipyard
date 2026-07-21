@@ -116,3 +116,25 @@ def test_classify_files_both_present(tmp_path):
         ".hull.json": "present",
         ".github/workflows/security.yml": "present",
     }
+
+
+# --- pushBranches: mirrors rigging/tests/test_scaffold.py ---------------
+
+
+def test_propose_config_omits_push_branches_when_not_signalled():
+    """Absent means "use the default". Writing the default out explicitly
+    would freeze today's choice into every scaffolded repo."""
+    assert "pushBranches" not in propose_config({})
+
+
+def test_propose_config_carries_push_branches_through(tmp_path):
+    cfg = propose_config({"pushBranches": ["master"]})
+    assert cfg["pushBranches"] == ["master"]
+    (tmp_path / ".hull.json").write_text(json.dumps(cfg))
+    assert load_config(tmp_path).push_branches == ("master",)
+
+
+@pytest.mark.parametrize("bad", [[], "main", ["a b"], [1], ["-x"], ["a${{x}}"]])
+def test_propose_config_rejects_unrenderable_push_branches(bad):
+    with pytest.raises(ValueError):
+        propose_config({"pushBranches": bad})

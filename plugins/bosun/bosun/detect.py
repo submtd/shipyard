@@ -21,6 +21,8 @@ def detect_ecosystems(root) -> tuple[str, ...]:
     for ecosystem_id, spec in ecosystems.REGISTRY.items():
         if spec.always_on:
             continue
-        if any((root / filename).exists() for filename in spec.detect_files):
+        # is_file, not exists: a *directory* with a marker's name holds no
+        # configuration, and detecting off one scaffolds the wrong stack.
+        if any((root / filename).is_file() for filename in spec.detect_files):
             detected.append(ecosystem_id)
     return tuple(detected)

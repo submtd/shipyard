@@ -66,7 +66,15 @@ def test_python_and_node_detect_files_match_riggings_stack_markers():
 
 
 def test_intervals_value():
-    assert INTERVALS == ("daily", "weekly", "monthly")
+    """Every `schedule.interval` GitHub accepts without extra keys. The
+    enum stopped at monthly, so a valid `"quarterly"` in .bosun.json was
+    rejected by bosun's own config loader -- a false error about a file
+    GitHub would have accepted. `cron` is deliberately absent: it is the one
+    value that requires a companion `schedule.cronjob` key, so admitting it
+    to this enum alone would render a dependabot.yml GitHub rejects."""
+    assert INTERVALS == (
+        "daily", "weekly", "monthly", "quarterly", "semiannually", "yearly")
+    assert "cron" not in INTERVALS
 
 
 def test_ecosystemspec_is_frozen_dataclass():

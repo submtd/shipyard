@@ -56,3 +56,17 @@ def test_changelog_workflow_references_the_changelog_script():
     # actually call check_changelog.py would be a silently broken gate.
     text = (TEMPLATES / "changelog.yml").read_text()
     assert "scripts/check_changelog.py" in text
+
+
+def test_codeowners_template_has_no_active_rule():
+    """The template shipped `*  @REPLACE-WITH-OWNER` as a LIVE rule. GitHub
+    resolves owners and rejects the whole file as invalid when one does not
+    exist -- and once keel:protect turns on code-owner review, every PR in
+    the scaffolded repo becomes unmergeable until someone notices. A
+    scaffold must be inert until edited, so every non-comment line here has
+    to be commented out."""
+    rules = [
+        line for line in (TEMPLATES / "CODEOWNERS").read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert not rules, f"CODEOWNERS template ships active rule(s): {rules}"

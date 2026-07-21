@@ -18,6 +18,60 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+Closes the findings left open by 0.3.0's code review.
+
+### Added
+
+- `rigging` and `hull` both accept an optional `pushBranches` key in
+  `.rigging.json` / `.hull.json`, defaulting to `["main"]`. Both `init`
+  skills now check the repo's real default branch before proposing a config,
+  because a repo on `master` that took the default would get no push CI at
+  all with nothing to say so.
+
+### Changed
+
+- **Breaking (rendered output).** `rigging` and `hull` render `on: push`
+  restricted to `pushBranches` instead of `on: [push, pull_request]`. A pull
+  request raised from a branch in the same repo previously ran the whole
+  matrix twice -- once for the push, once for the PR. Re-run the `init`
+  skills, or regenerate, to pick this up.
+- `rigging`'s python stack installs `'pytest>=8,<9'` rather than bare
+  `pytest`, so a pytest major release cannot turn CI red in a repo whose own
+  code never changed.
+- `bosun` accepts the `quarterly`, `semiannually` and `yearly` schedule
+  intervals. The enum stopped at `monthly`, so bosun rejected `.bosun.json`
+  files GitHub would have accepted. `cron` remains unsupported: it needs a
+  companion `schedule.cronjob` key that the config schema and renderer do
+  not yet model, and admitting it alone would render a file GitHub rejects.
+- `keel`'s scaffolded `CODEOWNERS` template ships with no active rule. It
+  previously shipped a live `*  @REPLACE-WITH-OWNER` line; GitHub resolves
+  every owner and rejects the whole file as invalid when one does not exist,
+  so once `keel:protect` required code-owner review, every PR in the
+  scaffolded repo became unmergeable.
+
+### Fixed
+
+- `keel`'s `target_cwd` silently failed the guard open in three ways: a
+  relative `cd` (`cd packages/api && git commit`, the normal monorepo shape)
+  was returned unanchored and resolved against the hook's own working
+  directory; a `~` was never expanded; and `--git-dir=<path>`, git's own
+  equals form, was not recognised at all. Each produced a directory that
+  does not exist, so `repo_root()` returned `None` and the hook returned
+  without evaluating a single rule -- no block, no message, no signal that
+  anything had been skipped. `--git-dir` now also resolves to the work tree
+  rather than to the `.git` directory, which is not a directory git can run
+  `rev-parse --show-toplevel` in.
+- `keel` read `gh pr merge`'s strategy with a membership test over every
+  token, so a flag *value* that looked like a strategy flag became the
+  strategy: `gh pr merge 1 --body '-s' --merge` parsed as `squash`. Since
+  the merge-strategy rule blocks outright on a mismatch, a correct command
+  earned a hard DENY naming a strategy it never requested.
+- Stack detection in `rigging`, `ballast`, `stow` and `bosun` used
+  `.exists()` rather than `.is_file()`, so a *directory* named
+  `package.json` or `pyproject.toml` -- a vendored tree, an unpacked
+  artifact -- detected the whole stack and scaffolded it off a path holding
+  no configuration.
+
 ## [0.3.0] - 2026-07-21
 
 First released version. The suite existed before this and was in use, but

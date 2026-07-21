@@ -53,7 +53,7 @@ REGISTRY: dict[str, StackSpec] = {
         steps=(
             Step(run=(
                 "python -m pip install --upgrade pip\n"
-                "pip install pytest\n"
+                "pip install 'pytest>=8,<9'\n"
                 "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
             )),
             Step(run="python -m pytest"),

@@ -75,6 +75,13 @@ you cannot infer:
   entry gets `{}` in the emitted config, so `config.load_config` fills in the
   registry default later (`python` → `3.12`, `node` → `20`). Ask if the user
   wants something else, e.g. a matrix of `["3.10", "3.11", "3.12"]`.
+- `pushBranches` — optional, defaults to `["main"]`. Pull requests always
+  trigger CI, so `push` is restricted to the long-lived branches; without
+  that, every PR raised from a branch in the same repo runs the whole matrix
+  twice. **Check the repo's actual default branch** (`git symbolic-ref
+  --short refs/remotes/origin/HEAD`, or `git branch --show-current` on a
+  fresh repo) and set this when it isn't `main` — a repo on `master` that
+  takes the default gets no push CI at all, and nothing says so.
 
 Call `rigging.scaffold.propose_config(signals)` to get the `.rigging.json`
 dict, e.g.:

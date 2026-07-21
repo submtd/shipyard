@@ -165,3 +165,29 @@ def test_known_keys_together_still_load(tmp_path):
     cfg = load_config(write(tmp_path, {"name": "ci", "stacks": {"python": {"versions": ["3.12"]}}}))
     assert cfg.name == "ci"
     assert cfg.stacks["python"] == ("3.12",)
+
+
+# --- pushBranches -------------------------------------------------------
+
+
+def test_push_branches_defaults_to_the_conventional_trunk(tmp_path):
+    (tmp_path / ".rigging.json").write_text(json.dumps({"stacks": {"python": {}}}))
+    assert load_config(tmp_path).push_branches == ("main",)
+
+
+def test_push_branches_is_read_from_the_config(tmp_path):
+    cfg = dict({"stacks": {"python": {}}}, pushBranches=["main", "release/1.x"])
+    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
+    assert load_config(tmp_path).push_branches == ("main", "release/1.x")
+
+
+@pytest.mark.parametrize("bad", [[], "main", {}, [""], ["a b"], [1], ["-x"], ["a$b"]])
+def test_push_branches_rejects_what_it_cannot_safely_render(tmp_path, bad):
+    """The value is rendered straight into YAML, so anything needing quoting
+    or escaping is refused rather than emitted and hoped for. An empty list
+    is refused too: it renders `branches: []`, which silently disables push
+    CI entirely -- exactly the failure the key exists to prevent."""
+    cfg = dict({"stacks": {"python": {}}}, pushBranches=bad)
+    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)

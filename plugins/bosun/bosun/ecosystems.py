@@ -42,4 +42,11 @@ REGISTRY: dict[str, EcosystemSpec] = {
 }
 
 ECOSYSTEM_IDS: tuple[str, ...] = tuple(REGISTRY)
-INTERVALS: tuple[str, ...] = ("daily", "weekly", "monthly")
+#: Every `schedule.interval` GitHub accepts on its own. `cron` is excluded
+#: on purpose: it is the only value that needs a companion `schedule.cronjob`
+#: key, so accepting it here -- with no way to express the expression -- would
+#: render a dependabot.yml GitHub rejects. Supporting it means adding that
+#: key to the config schema and the renderer together.
+INTERVALS: tuple[str, ...] = (
+    "daily", "weekly", "monthly", "quarterly", "semiannually", "yearly",
+)
