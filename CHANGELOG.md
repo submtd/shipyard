@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `bosun`, Shipyard's sixth and final core plugin: renders an
+  injection-free `.github/dependabot.yml` from a committed `.bosun.json`
+  -- github-actions always-on plus detected pip/npm. Dogfooded net-new on
+  shipyard, keeping the suite's pinned action refs current.
 - `hull`, Shipyard's fifth plugin: renders an injection-safe gitleaks
   secret-scan `.github/workflows/security.yml` from a committed
   `.hull.json`. Dogfooded net-new on shipyard's own repo.

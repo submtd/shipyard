@@ -48,5 +48,6 @@ def test_rendered_testpaths_include_every_plugin():
         "plugins/stow/tests",
         "plugins/ballast/tests",
         "plugins/hull/tests",
+        "plugins/bosun/tests",
     ]:
         assert plugin_tests in rendered
