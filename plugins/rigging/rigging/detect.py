@@ -24,6 +24,56 @@ def detect_stacks(root) -> tuple[str, ...]:
     return tuple(detected)
 
 
+class _Unparseable:
+    """Sentinel: package.json exists but could not be read or parsed as a
+    JSON object (unreadable bytes, malformed JSON, or a top-level value that
+    is not an object, e.g. an array)."""
+
+    def __repr__(self):
+        return "UNPARSEABLE"
+
+
+#: Returned by `_package_json` when package.json exists but is not usable.
+#: A bare `None` cannot carry this distinction from "no package.json file at
+#: all" -- and callers need exactly that distinction (see `_package_json`'s
+#: docstring) -- so this is a dedicated sentinel rather than another falsy
+#: value that would collapse back into the same ambiguity.
+UNPARSEABLE = _Unparseable()
+
+
+def _package_json(root):
+    """Parse package.json once, in one place.
+
+    Returns:
+      - a `dict`, when package.json exists and parses as a JSON object
+      - `None`, when there is no package.json file at root
+      - `UNPARSEABLE`, when package.json exists but is unreadable, is not
+        valid JSON, or parses to something other than a JSON object
+
+    `_declared_package_manager`, `_declared_yarn_major`, and the pnpm branch
+    of `node_package_manager` all used to open, read, and `json.loads`
+    package.json independently, with the same try/except -- three chances
+    for the parsing to drift apart. This is the one place that does it now.
+
+    The three-way return matters: "absent" and "unparseable" are different
+    facts (one names nothing, corepack's config can't exist; the other names
+    a file the pnpm setup action will fail trying to read) and callers that
+    need to react differently to each -- see the pnpm branch in
+    `node_package_manager` -- cannot do so if both collapse to the same
+    `None`.
+    """
+    path = root / "package.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return UNPARSEABLE
+    if not isinstance(data, dict):
+        return UNPARSEABLE
+    return data
+
+
 def _declared_package_manager(root):
     """Return the package manager named by package.json's `packageManager`
     field, lowercased and stripped of its version, or None for "no signal".
@@ -40,16 +90,12 @@ def _declared_package_manager(root):
     detection over a broken package.json would also be a strictly worse
     outcome than the bug it guards against: the repo would get no scaffold and
     no diagnosis, instead of a scaffold plus whatever the lockfile check says.
-    The lockfile markers are checked independently, so a repo with a corrupt
-    package.json AND a pnpm-lock.yaml is still correctly refused.
+    The lockfile markers are checked independently: a repo with a corrupt
+    package.json and a pnpm-lock.yaml is refused too, but by that separate
+    check (which diagnoses the parse failure by name), not by this function
+    returning None.
     """
-    path = root / "package.json"
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError):
-        return None
+    data = _package_json(root)
     if not isinstance(data, dict):
         return None
     declared = data.get("packageManager")
@@ -60,40 +106,13 @@ def _declared_package_manager(root):
     return declared.split("@", 1)[0].strip().lower()
 
 
-def _package_json_parses(root):
-    """True when package.json exists and parses as a JSON object.
-
-    Used only to distinguish "parsed fine, and there is confirmedly no
-    `packageManager` field" from "we could not read this file at all" --
-    `_declared_package_manager` collapses both to None, which is correct for
-    its own question ("is some other manager definitely in charge?") but not
-    for the pnpm refusal below, which must fire on confirmed absence and
-    stay silent on an unparseable file (not evidence of anything; the
-    lockfile still decides).
-    """
-    path = root / "package.json"
-    if not path.is_file():
-        return False
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError):
-        return False
-    return isinstance(data, dict)
-
-
 def _declared_yarn_major(root):
     """Return 1 or 2 for a declared yarn version, or None if undeclared.
 
     2 means "berry or later" -- every major from 2 up takes the same
     `--immutable` flag, so they need no further distinction.
     """
-    path = root / "package.json"
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError):
-        return None
+    data = _package_json(root)
     if not isinstance(data, dict):
         return None
     declared = data.get("packageManager")
@@ -161,10 +180,14 @@ def node_package_manager(root):
     if families:
         family = next(iter(families))
         if declared is not None and declared != family:
-            lockfile = next(iter(found))
+            # Name every lockfile found, not just an arbitrary one -- more
+            # than one can be present (e.g. bun.lockb and bun.lock), and the
+            # message has to stay accurate in that case too.
+            lockfiles = ", ".join(sorted(found))
+            verb = "belongs" if len(found) == 1 else "belong"
             return None, (
                 f"package.json declares `packageManager` as {declared}, but "
-                f"the repo root has {lockfile}, which belongs to {family}. "
+                f"the repo root has {lockfiles}, which {verb} to {family}. "
                 f"rigging will not guess which one is authoritative; make "
                 f"them agree and re-run."
             )
@@ -181,14 +204,31 @@ def node_package_manager(root):
                     "\"yarn@4.0.0\") and re-run."
                 )
             return yarn_id, None
-        if family == "pnpm" and declared != "pnpm" and _package_json_parses(root):
+        if family == "pnpm" and declared != "pnpm":
             # pnpm/action-setup takes its version from package.json's
             # `packageManager` field when no `version:` input is given, and
             # ERRORS when neither is present -- its README: "Optional when
             # there is a packageManager field in the package.json. otherwise,
             # this field is required". Selecting pnpm off the lockfile alone
             # would therefore render a workflow that fails on its setup step
-            # every run.
+            # every run. That is exactly as true of a package.json the
+            # action-setup step cannot even read a field from, so an
+            # unparseable file refuses too -- with its own diagnosis, since
+            # the fix (a valid file) differs from the fix for a parseable
+            # file that is merely missing the field.
+            parsed = _package_json(root)
+            if not isinstance(parsed, dict):
+                return None, (
+                    "found pnpm-lock.yaml at the repo root, but package.json "
+                    "could not be parsed. The pnpm setup action reads the "
+                    "pnpm version from package.json's `packageManager` "
+                    "field, and cannot read that field from a file it "
+                    "cannot parse -- so rigging would be writing a job that "
+                    "cannot get as far as installing anything. Fix "
+                    "package.json so it is valid JSON with a "
+                    "`packageManager` field (e.g. \"pnpm@9.12.0\") and "
+                    "re-run."
+                )
             return None, (
                 "found pnpm-lock.yaml at the repo root, but package.json has "
                 "no `packageManager` field. The pnpm setup action reads the "
@@ -211,6 +251,19 @@ def node_package_manager(root):
             "`--frozen-lockfile` (Yarn 1) or `--immutable` (Yarn 2+). Pin it "
             "as e.g. \"yarn@4.0.0\" and re-run."
         ))
+    if declared is not None and declared not in stacks.NODE_PACKAGE_MANAGERS:
+        # A declared manager rigging cannot drive is not "no signal" -- it is
+        # a definite instruction rigging cannot follow. Falling through to
+        # npm here would render an `npm ci` workflow for a repo whose
+        # dependencies npm never installed, silently doing something other
+        # than what the repo asked for.
+        known = ", ".join(sorted(stacks.NODE_PACKAGE_MANAGERS))
+        return None, (
+            f"package.json declares `packageManager` as {declared}, but "
+            f"rigging does not know how to drive that package manager. It "
+            f"can drive: {known}. Use one of those, or open an issue if "
+            f"{declared} should be supported."
+        )
     if declared is not None and declared in stacks.NODE_PACKAGE_MANAGERS:
         return declared, None
     return stacks.DEFAULT_NODE_PACKAGE_MANAGER, None

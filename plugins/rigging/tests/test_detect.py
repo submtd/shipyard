@@ -56,14 +56,8 @@ def test_a_directory_named_like_a_marker_detects_nothing(tmp_path):
 from rigging.detect import unsupported_reasons
 
 
-@pytest.mark.parametrize(
-    "lockfile,marker",
-    [
-        ("pnpm-lock.yaml", "pnpm-lock.yaml"),
-        ("yarn.lock", "yarn.lock"),
-    ],
-)
-def test_foreign_lockfile_without_declared_version_makes_node_unsupported(tmp_path, lockfile, marker):
+@pytest.mark.parametrize("lockfile", ["pnpm-lock.yaml", "yarn.lock"])
+def test_foreign_lockfile_without_declared_version_makes_node_unsupported(tmp_path, lockfile):
     (tmp_path / "package.json").write_text("{}")
     (tmp_path / lockfile).write_text("")
     reasons = unsupported_reasons(tmp_path)
@@ -71,7 +65,7 @@ def test_foreign_lockfile_without_declared_version_makes_node_unsupported(tmp_pa
     reason = reasons["node"]
     # The reason has to be actionable on its own: it is the only diagnosis
     # the user sees, so it must name the marker and what to declare.
-    assert marker in reason
+    assert lockfile in reason
     assert "packageManager" in reason
 
 
@@ -268,12 +262,55 @@ def test_lockfile_disagreeing_with_declared_manager_is_refused(tmp_path):
     assert "pnpm" in reason and "yarn.lock" in reason
 
 
-def test_unparseable_package_json_is_not_a_refusal(tmp_path):
-    """A package.json we cannot read is not evidence of anything. With a
-    lockfile present the lockfile still decides."""
+def test_unparseable_package_json_with_pnpm_lock_is_refused(tmp_path):
+    """An unparseable package.json is not evidence some other manager is in
+    charge for `_declared_package_manager`'s purposes -- but for pnpm
+    specifically it IS evidence of a definite failure: pnpm/action-setup
+    reads its version from package.json's `packageManager` field, and a file
+    it cannot even parse is a file it definitely cannot read that field
+    from. Selecting pnpm here would render exactly the broken setup step the
+    refusal exists to prevent."""
     (tmp_path / "package.json").write_text("{ not json")
     (tmp_path / "pnpm-lock.yaml").write_text("")
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "pnpm-lock.yaml" in reason
+    assert "package.json" in reason
+    assert "packageManager" in reason
+
+
+def test_pnpm_with_declared_version_and_valid_json_is_still_selected(tmp_path):
+    """The parseable-with-field case must keep working: this is not a
+    blanket refusal on the family, only on package.json being unusable."""
+    (tmp_path / "package.json").write_text('{"packageManager": "pnpm@9.12.0"}')
+    (tmp_path / "pnpm-lock.yaml").write_text("")
     assert node_package_manager(tmp_path) == ("pnpm", None)
+
+
+def test_unknown_declared_manager_with_no_lockfile_is_refused(tmp_path):
+    """A declared manager rigging cannot drive is a definite instruction, not
+    an absence of signal -- falling through to npm would render an `npm ci`
+    workflow for a repo whose dependencies npm never installed."""
+    (tmp_path / "package.json").write_text('{"packageManager": "cnpm@1.0.0"}')
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "cnpm" in reason
+    assert "npm" in reason
+
+
+def test_unknown_declared_manager_does_not_affect_registered_managers(tmp_path):
+    """Guard against an overly broad fix: registered managers must keep
+    working exactly as before."""
+    (tmp_path / "package.json").write_text('{"packageManager": "pnpm@9.12.0"}')
+    assert node_package_manager(tmp_path) == ("pnpm", None)
+
+
+def test_bare_package_json_with_no_field_still_selects_npm(tmp_path):
+    """Guard against an overly broad fix: a repo with no `packageManager`
+    field at all is not a declaration of anything, and must still default to
+    npm."""
+    (tmp_path / "package.json").write_text("{}")
+    assert node_package_manager(tmp_path) == ("npm", None)
 
 
 def test_no_package_json_reports_nothing(tmp_path):
