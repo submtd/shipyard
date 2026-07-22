@@ -18,6 +18,28 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+### Added
+
+- **A secret scanner that needs no license.** `.hull.json`'s `scanner` now
+  accepts `"trufflehog"` alongside `"gitleaks"`, pinned to
+  `trufflesecurity/trufflehog@27b0417c` (v3.95.9). It needs no license key,
+  no secret of any kind, and only `contents: read` -- narrower than gitleaks,
+  which additionally needs `pull-requests: read` to enumerate a pull
+  request's commits through the API.
+
+  This closes a gap 0.6.0 opened. That release taught `hull:init` to refuse
+  rather than scaffold a workflow that could not pass, which was right, but
+  it left an organization-owned repo with **no secret scanning at all** --
+  and the blocker's own suggested remedy, "choose a scanner with no license
+  gate", named nothing, because the registry had one entry. It names
+  `trufflehog` now. The default is unchanged: `gitleaks` for everyone who
+  is not blocked.
+
+  Reports `verified` and `unknown` findings, not `unverified`. A secret the
+  tool cannot verify is exactly the kind it should not stay quiet about;
+  reporting *everything* trains a team to ignore the check, which is the
+  failure mode the organization blocker exists to prevent.
+
 ## [0.6.0] - 2026-07-22
 
 Minor rather than patch: two of these fixes change what `init` does in repos

@@ -1,13 +1,14 @@
 ---
 name: init
-description: Use to set up secret scanning in a repository via hull - proposes a .hull.json and scaffolds an injection-safe gitleaks GitHub Actions workflow, never overwriting existing files.
+description: Use to set up secret scanning in a repository via hull - proposes a .hull.json and scaffolds an injection-safe GitHub Actions workflow (gitleaks or trufflehog), never overwriting existing files.
 ---
 
 # Initialising hull in a repo
 
 This scaffolds the **secret-scanning** layer only: a `.hull.json` config and
-one rendered GitHub Actions workflow that runs a secret scanner (gitleaks,
-today's only registered scanner) on push and pull request. It does not touch
+one rendered GitHub Actions workflow that runs a secret scanner (`gitleaks`
+by default, or `trufflehog` — see section 3) on push and pull request. It
+does not touch
 the test-runner config (`ballast`), the CI pipeline that runs the test suite
 (`rigging`), `.gitignore` hygiene (`stow`), or the git-lifecycle layer —
 branch protection, PR/issue templates, CODEOWNERS, the changelog gate
@@ -52,9 +53,10 @@ This has three possible outcomes, and they are not the same thing:
   repair or merge logic for it.
 
 There is no stack-detection step here, unlike `rigging:init`/`ballast:init`.
-Secret scanning is stack-agnostic — gitleaks scans the repo's git history
-and working tree for credential-shaped strings regardless of what language
-or framework the code is written in — so there is nothing to detect.
+Secret scanning is stack-agnostic — either scanner scans the repo's git
+history and working tree for credential-shaped strings regardless of what
+language or framework the code is written in — so there is nothing to
+detect.
 
 ## 2. Check the preconditions before writing anything
 
@@ -123,11 +125,15 @@ differently — that is why they are separate rather than one list of strings:
   you never want ignored. The user's way forward is in the message — obtain
   the free license key, add it as a repository or organization Actions secret,
   and re-run `hull:init` telling you the secret's name so it lands in
-  `licenseSecret` — or pick a scanner with no license gate (there is no such
-  scanner registered today, so in practice it is the license).
+  `licenseSecret` — or re-run `hull:init` choosing `"trufflehog"`, which has
+  no license gate at all. That second remedy is new; before it, the registry
+  had one entry and the blocker's own message named nothing.
 - **`advisories` is non-empty** — these are **not** blockers. Report them
-  alongside a successful init, never instead of one. Today's single advisory
-  is the fork-PR one described in section 3 under `licenseSecret`.
+  alongside a successful init, never instead of one. Which one you get
+  depends on the scanner: `gitleaks` returns the fork-PR caveat described in
+  section 3 under `licenseSecret`, and `trufflehog` returns the
+  `BASE == HEAD` one. Neither scanner returns both — the fork-PR advisory is
+  about a secret being withheld, and `trufflehog` reads no secret.
 
 `check_preconditions` raises `ValueError` naming the key on an unrecognised
 signal — including a near-miss like `owner_type` for `ownerType`, which would
@@ -156,10 +162,27 @@ Build a signals dict and ask the user only for what you cannot infer:
   the no-clobber stop in section 4 below (exact-case match). Confirm they
   still want that name (e.g. because they've deliberately renamed rigging's
   workflow elsewhere) before using it.
-- `scanner` — optional; defaults to `"gitleaks"` inside `propose_config`,
-  currently the only registered scanner id
-  (`hull.scanners.SCANNER_IDS == ("gitleaks",)`). No need to ask unless the
-  user specifically wants to override it — there's nothing else to pick yet.
+- `scanner` — optional; defaults to `"gitleaks"` inside `propose_config`.
+  Two are registered, and the choice is real:
+  - **`gitleaks`** (default) — the incumbent. Requires a free
+    `GITLEAKS_LICENSE` for **organization-owned** repos, public or private
+    alike; section 2 refuses to scaffold without one. Needs
+    `pull-requests: read` in addition to `contents: read`, because it
+    enumerates a pull request's commits through the API.
+  - **`trufflehog`** — no license, no secret of any kind, and only
+    `contents: read`. AGPL 3.0, and it runs as a CI step against the repo
+    rather than being linked into anything the project ships, so its licence
+    does not reach the consuming codebase. Reports `verified` and `unknown`
+    findings (not `unverified`). This is the answer when section 2 reports
+    the organization blocker and the user does not want to obtain a licence.
+
+  Both are pinned to an immutable SHA and both are byte-identity tested.
+  You only reach this section once section 2 came back with no blockers, so
+  there is no live blocker to ask about here — if the organization blocker
+  fired, section 2 already stopped the flow, and the way forward is the one
+  its message states: the *user* re-runs `hull:init`, this time naming
+  `"trufflehog"` as the scanner (or supplying `licenseSecret`), and section 3
+  is reached again on that fresh run. Absent that, take the default.
 - `pushBranches` — optional, defaults to `["main"]`. Pull requests always
   trigger the scan, so `push` is restricted to the long-lived branches;
   without that, every PR raised from a branch in the same repo scans twice.
@@ -306,9 +329,9 @@ Prove what's on disk is sound:
   two ways:
 
   1. Every `- run:` step body (via `render.iter_run_blocks`) must be free of
-     `${{`. (Increment 1's only scanner, gitleaks, has no `run` step — it's
-     a single `uses:` action — so today this list is always empty; the check
-     stays in place for the day a future scanner adds one.)
+     `${{`. (Neither registered scanner has a `run` step — both gitleaks and
+     trufflehog are a single `uses:` action — so today this list is always
+     empty; the check stays in place for the day a future scanner adds one.)
   2. Every `${{ ... }}` expression that appears **anywhere** in the rendered
      output must be a bare `${{ secrets.<NAME> }}` lookup — nothing else,
      and never a `github.*` context reference. This is the load-bearing
@@ -356,13 +379,16 @@ not always the person who answered section 2's questions:
   either the owner is a personal account, or `licenseSecret` is configured,
   or the owner type could not be determined — say **which** of the three, so
   the user knows whether a red job is expected.
-- Report every advisory `check_preconditions` returned, verbatim. Today that
-  is the fork-PR one: **fork pull requests cannot read repository or
-  organization secrets**, so the gitleaks job fails on fork PRs even with a
-  valid license. There is no config that changes this — it is how GitHub
-  protects secrets from untrusted contributors — so a repo taking fork
-  contributions (keel's `contributions` of `"fork"` or `"both"`) should not
-  make this a required check for fork PRs.
+- Report every advisory `check_preconditions` returned, verbatim. Which one
+  you get depends on the scanner (same as section 2): `gitleaks` returns the
+  fork-PR one — **fork pull requests cannot read repository or organization
+  secrets**, so the gitleaks job fails on fork PRs even with a valid license.
+  There is no config that changes this — it is how GitHub protects secrets
+  from untrusted contributors — so a repo taking fork contributions (keel's
+  `contributions` of `"fork"` or `"both"`) should not make this a required
+  check for fork PRs. `trufflehog` returns the `BASE == HEAD` one instead —
+  rare, and not a finding or a hull bug when it happens. Neither scanner
+  returns both.
 
 Point the user at:
 
@@ -380,8 +406,8 @@ Point the user at:
 Note what's deliberately **not** here yet — later hull increments, not gaps
 in this one:
 
-- scanners beyond `gitleaks` (`hull.scanners.SCANNER_IDS` has exactly one
-  entry today)
+- scanners beyond `gitleaks` and `trufflehog` (`hull.scanners.SCANNER_IDS`
+  has exactly two entries today)
 - **creating** the license secret itself. hull now renders it through
   (`licenseSecret`, section 3) and refuses to scaffold without it on an
   org-owned repo (section 2), but actually storing the key — `gh secret set
@@ -397,7 +423,7 @@ in this one:
   `on: [push, pull_request]`), including a scheduled or manually-dispatched
   full-history sweep — see the adoption note below
 - scan-scope configuration (path allow/deny lists, custom gitleaks rules) —
-  today's job runs gitleaks with its own defaults
+  today's job runs the configured scanner with its own defaults
 - migrating or reconciling a pre-existing, foreign workflow file at
   `.github/workflows/<name>.yml`
 - an interactive edit path for an existing `.hull.json` (increment 1's only
@@ -409,19 +435,25 @@ in this one:
 
 Say this to the user plainly when `hull:init` finishes on a repo that
 already has commits. The rendered workflow triggers on `push` and
-`pull_request`, and `gitleaks-action` scans the *commit range of the event*
+`pull_request`, and both scanners only scan the *commit range of the event*
 — that's what `fetch-depth: 0` is there to make possible. So the very run
-triggered by the commit that adds `security.yml` scans only that commit.
+triggered by the commit that adds `security.yml` scans only that commit,
+whichever scanner you chose.
 
 The consequence is worth being explicit about, because the green check is
 misleading: **a secret committed before adoption is not found by this
 workflow.** The repo shows a passing secret-scan and has never actually
 been scanned.
 
-Recommend a one-time sweep over the full history at adoption:
+Recommend a one-time sweep over the full history at adoption, with the
+scanner you scaffolded:
 
     gitleaks detect --source . --redact
 
-(`detect` walks git history; the workflow's `protect`-style range scan does
-not.) If it finds anything, rotating the credential is the first step —
+or, for trufflehog:
+
+    trufflehog git file://. --results=verified,unknown
+
+(both walk full git history; the workflow's per-event range scan does not.)
+If either finds anything, rotating the credential is the first step —
 rewriting history does not un-leak a secret that has already been pushed.

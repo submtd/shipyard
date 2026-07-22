@@ -167,3 +167,21 @@ def test_licensed_output_gains_exactly_one_line(tmp_path):
         load_config(write_config(tmp_path, {"licenseSecret": "GITLEAKS_LICENSE"}))
     ))
     assert len(licensed.splitlines()) == len(plain.splitlines()) + 1
+
+
+def test_trufflehog_output_contains_no_expressions_at_all(tmp_path):
+    """It takes no secret, so there is nothing to interpolate. Zero `${{ }}`
+    is the strongest possible version of assertion 3."""
+    cfg = load_config(write_config(tmp_path, {"scanner": "trufflehog"}))
+    output = render(build_plan(cfg))
+    assert EXPRESSION_RE.findall(output) == []
+    assert "github." not in output
+    for block in iter_run_blocks(output):
+        assert "${{" not in block
+
+
+def test_trufflehog_scan_with_values_are_quoted_scalars(tmp_path):
+    """`with:` values are rendered exactly like `env:` values -- quoted, so
+    a leading dash cannot be read back as a YAML list item."""
+    cfg = load_config(write_config(tmp_path, {"scanner": "trufflehog"}))
+    assert '          extra_args: "--results=verified,unknown"' in render(build_plan(cfg))

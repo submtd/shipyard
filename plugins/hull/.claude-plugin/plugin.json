@@ -2,7 +2,7 @@
   "name": "hull",
   "displayName": "hull",
   "version": "0.6.0",
-  "description": "Authors a secret-scanning CI workflow (gitleaks) for a repo.",
+  "description": "Authors a secret-scanning CI workflow (gitleaks or trufflehog) for a repo.",
   "license": "MIT",
   "keywords": [
     "security",

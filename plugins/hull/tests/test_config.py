@@ -64,10 +64,10 @@ def test_invalid_name_raises_naming_field(tmp_path, name):
 
 def test_unknown_scanner_raises_naming_scanner_and_allowed(tmp_path):
     with pytest.raises(ConfigError) as e:
-        load_config(write(tmp_path, {"scanner": "trufflehog"}))
+        load_config(write(tmp_path, {"scanner": "semgrep"}))
     msg = str(e.value)
     assert "scanner" in msg
-    assert "trufflehog" in msg
+    assert "semgrep" in msg
     assert "gitleaks" in msg
 
 
@@ -188,21 +188,13 @@ def test_all_known_keys_together_still_load(tmp_path):
                          license_secret="GITLEAKS_LICENSE")
 
 
-def test_license_secret_rejected_for_a_scanner_with_no_license_gate(tmp_path, monkeypatch):
-    """A `licenseSecret` set for a scanner that has nowhere to put it is not
+def test_license_secret_rejected_for_a_scanner_with_no_license_gate(tmp_path):
+    """A licenseSecret set for a scanner that has nowhere to put it is not
     harmless -- it is a user believing they configured something that is
-    silently discarded, which is the exact failure the unknown-key check
-    exists to prevent. Every registered scanner today has a license gate, so
-    the licenseless case is staged with a patched registry entry rather than
-    left untested until a second scanner lands."""
-    import dataclasses
-
-    from hull import scanners
-
-    licenseless = dataclasses.replace(scanners.REGISTRY["gitleaks"],
-                                      license_env=None)
-    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", licenseless)
-
+    silently discarded. Now exercised against the real trufflehog entry
+    rather than a patched registry."""
     with pytest.raises(ConfigError) as e:
-        load_config(write(tmp_path, {"licenseSecret": "GITLEAKS_LICENSE"}))
+        load_config(write(tmp_path, {
+            "scanner": "trufflehog", "licenseSecret": "GITLEAKS_LICENSE",
+        }))
     assert "licenseSecret" in str(e.value)

@@ -89,8 +89,9 @@ def _reject_unknown_signals(signals):
     _reject_unknown(signals, SIGNAL_KEYS)
 
 
-def _valid_license_secret(signals):
-    """Validate an optional `licenseSecret` signal, returning it or None.
+def _valid_license_secret(signals, scanner):
+    """Validate an optional `licenseSecret` signal against SECRET_NAME_RE and
+    the chosen scanner, returning it or None.
 
     Same regex the config loader applies (config.SECRET_NAME_RE), for the same
     reason propose_config re-validates `name` and `scanner`: this function's
@@ -100,6 +101,11 @@ def _valid_license_secret(signals):
     both places is not redundancy for its own sake -- it is the difference
     between a caller learning about a bad value now, in front of the user,
     and learning about it after .hull.json has already been written.
+
+    Mirrors config._valid_license_secret's second check: a `licenseSecret` set
+    for a scanner with no license gate at all (`ScannerSpec.license_env is
+    None`) is rejected here too, so propose_config can never hand back a dict
+    that config.load_config would then refuse.
     """
     secret = signals.get("licenseSecret")
     if secret is None:
@@ -108,6 +114,11 @@ def _valid_license_secret(signals):
         raise ValueError(
             f"signals['licenseSecret'] must be a GitHub Actions secret name "
             f"matching {SECRET_NAME_RE.pattern} (got {secret!r})."
+        )
+    if REGISTRY[scanner].license_env is None:
+        raise ValueError(
+            f"signals['licenseSecret'] is set but scanner {scanner!r} has no "
+            f"license key to pass it to; remove 'licenseSecret'."
         )
     return secret
 
@@ -149,7 +160,7 @@ def propose_config(signals):
     # is: absent means "hull has nothing to pass", and writing an explicit
     # null would put a key in every scaffolded .hull.json that the loader
     # then has to treat as if it were missing anyway.
-    license_secret = _valid_license_secret(signals)
+    license_secret = _valid_license_secret(signals, scanner)
     if license_secret is not None:
         out["licenseSecret"] = license_secret
     return out
@@ -223,7 +234,7 @@ def check_preconditions(signals) -> Preconditions:
             f"signals['scanner'] must be one of {', '.join(SCANNER_IDS)} "
             f"(got {scanner!r})."
         )
-    license_secret = _valid_license_secret(signals)
+    license_secret = _valid_license_secret(signals, scanner)
     license_env = REGISTRY[scanner].license_env
 
     blockers: list[str] = []
@@ -244,7 +255,8 @@ def check_preconditions(signals) -> Preconditions:
             f"organization) as an Actions secret, and set \"licenseSecret\" in "
             f".hull.json to that secret's name (conventionally "
             f"\"{license_env}\") so hull renders it into the scan step -- or "
-            f"choose a scanner with no license gate."
+            f"re-run hull:init choosing the \"trufflehog\" scanner, which "
+            f"needs no license, no secret, and fewer token permissions."
         )
 
     # Non-fatal, but it will look like a hull bug the first time someone sees
@@ -260,6 +272,23 @@ def check_preconditions(signals) -> Preconditions:
             f"contributions (keel's contributions setting of \"fork\" or "
             f"\"both\"), expect that red check and treat it as expected rather "
             f"than as a finding."
+        )
+
+    # Scanner-specific and deliberately an advisory, not a blocker. Unlike
+    # the organization gate above -- which fails EVERY run, given those
+    # conditions -- this one is an edge case: the action explicitly handles a
+    # branch's first push by setting BASE to empty, and an ordinary push or
+    # pull request has distinct base and head. Stated anyway so a rare red
+    # run is diagnosed rather than mistaken for a hull bug.
+    if scanner == "trufflehog":
+        advisories.append(
+            "The trufflehog action exits 1 with \"BASE and HEAD commits are "
+            "the same\" when the range it is asked to scan is empty. hull's "
+            "triggers make that rare -- a branch's first push is handled by "
+            "the action itself, and an ordinary push or pull request has a "
+            "distinct base and head -- but if you do see that message, it is "
+            "the action declining to scan nothing, not a finding and not a "
+            "hull bug."
         )
 
     return Preconditions(tuple(blockers), tuple(advisories))

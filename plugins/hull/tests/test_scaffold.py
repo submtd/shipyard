@@ -12,7 +12,7 @@ import json
 import pytest
 
 from hull.config import load_config
-from hull.scanners import SCANNER_IDS
+from hull.scanners import REGISTRY, SCANNER_IDS
 from hull.scaffold import (
     SECURITY_FILES,
     check_preconditions,
@@ -45,13 +45,27 @@ def test_propose_config_explicit_signals_round_trip_through_load_config(tmp_path
     assert loaded.scanner == "gitleaks"
 
 
+def test_propose_config_trufflehog_round_trips_through_load_config(tmp_path):
+    """propose_config's documented guarantee -- valid signals in produces a
+    dict load_config accepts -- exercised on the trufflehog path, which is
+    the one issue #27 added."""
+    cfg = propose_config({"scanner": "trufflehog"})
+    assert cfg == {"name": "security", "scanner": "trufflehog"}
+    (tmp_path / ".hull.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)
+    assert loaded is not None
+    assert loaded.name == "security"
+    assert loaded.scanner == "trufflehog"
+    assert loaded.license_secret is None
+
+
 @pytest.mark.parametrize("bad_name", ["a/b", "../evil", "${{ github.token }}", "a.b", "", 5])
 def test_propose_config_bad_name_raises_value_error_naming_field(bad_name):
     with pytest.raises(ValueError, match="name"):
         propose_config({"name": bad_name})
 
 
-@pytest.mark.parametrize("bad_scanner", ["trufflehog", "", 5])
+@pytest.mark.parametrize("bad_scanner", ["semgrep", "", 5])
 def test_propose_config_unknown_scanner_raises_value_error_naming_field(bad_scanner):
     with pytest.raises(ValueError, match="scanner"):
         propose_config({"scanner": bad_scanner})
@@ -191,6 +205,29 @@ def test_propose_config_rejects_unrenderable_license_secret(bad):
         propose_config({"licenseSecret": bad})
 
 
+def test_propose_config_rejects_license_secret_for_a_licenseless_scanner():
+    """The bug this closes: propose_config used to hand back a dict that
+    config.load_config would then reject outright, because it validated only
+    the secret name's shape and never looked at which scanner it was being
+    set for."""
+    with pytest.raises(ValueError, match="licenseSecret") as excinfo:
+        propose_config({"scanner": "trufflehog", "licenseSecret": "GITLEAKS_LICENSE"})
+    assert "trufflehog" in str(excinfo.value)
+
+
+def test_check_preconditions_rejects_license_secret_for_a_licenseless_scanner():
+    """Same combination, checked at the precondition layer: it must be
+    refused before anything is written, not merely by load_config after the
+    fact."""
+    with pytest.raises(ValueError, match="licenseSecret") as excinfo:
+        check_preconditions({
+            "ownerType": "Organization",
+            "scanner": "trufflehog",
+            "licenseSecret": "GITLEAKS_LICENSE",
+        })
+    assert "trufflehog" in str(excinfo.value)
+
+
 # --- check_preconditions ---------------------------------------------------
 #
 # Issue #24: hull:init used to write a workflow that CANNOT pass in an
@@ -228,7 +265,7 @@ def test_blocker_states_cause_exit_code_and_remedy():
     assert "licenseSecret" in blocker
     assert "GITLEAKS_LICENSE" in blocker
     assert "secret" in blocker
-    assert "no license gate" in blocker
+    assert "trufflehog" in blocker
 
 
 def test_organization_with_a_license_secret_is_clear():
@@ -239,17 +276,13 @@ def test_organization_with_a_license_secret_is_clear():
     assert result.blockers == ()
 
 
-def test_organization_with_a_licenseless_scanner_is_clear(monkeypatch):
+def test_organization_with_a_licenseless_scanner_is_clear():
     """The blocker is keyed off the SCANNER's license gate, not off the
-    owner type alone -- a scanner with no gate is fine in an org repo."""
-    import dataclasses
-
-    from hull import scanners
-
-    licenseless = dataclasses.replace(scanners.REGISTRY["gitleaks"],
-                                      license_env=None)
-    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", licenseless)
-    assert check_preconditions({"ownerType": "Organization"}).blockers == ()
+    owner type alone. Previously staged with a patched registry because no
+    licenseless scanner existed; it now exercises the real one."""
+    assert check_preconditions({
+        "ownerType": "Organization", "scanner": "trufflehog",
+    }).blockers == ()
 
 
 # --- the advisory channel --------------------------------------------------
@@ -286,15 +319,13 @@ def test_advisory_is_not_a_blocker():
     assert result.blockers == ()
 
 
-def test_advisory_absent_for_a_scanner_with_no_license_gate(monkeypatch):
-    import dataclasses
-
-    from hull import scanners
-
-    licenseless = dataclasses.replace(scanners.REGISTRY["gitleaks"],
-                                      license_env=None)
-    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", licenseless)
-    assert check_preconditions({"ownerType": "User"}).advisories == ()
+def test_fork_pr_advisory_absent_for_a_scanner_with_no_license_gate():
+    """The fork-PR advisory is about secrets being withheld from fork runs.
+    trufflehog reads no secret, so the caveat does not apply to it."""
+    advisories = check_preconditions({
+        "ownerType": "User", "scanner": "trufflehog",
+    }).advisories
+    assert not any("fork" in a.lower() for a in advisories)
 
 
 def test_preconditions_unpacks_as_blockers_then_advisories():
@@ -372,7 +403,7 @@ def test_check_preconditions_rejects_a_hostile_license_secret():
 
 def test_check_preconditions_rejects_an_unknown_scanner():
     with pytest.raises(ValueError, match="scanner"):
-        check_preconditions({"ownerType": "User", "scanner": "trufflehog"})
+        check_preconditions({"ownerType": "User", "scanner": "semgrep"})
 
 
 def test_propose_config_still_rejects_owner_type():
@@ -381,3 +412,55 @@ def test_propose_config_still_rejects_owner_type():
     it silently."""
     with pytest.raises(ValueError, match="ownerType"):
         propose_config({"ownerType": "Organization"})
+
+
+def test_blocker_names_the_licenseless_scanner_concretely():
+    """Before #27 the message ended "or choose a scanner with no license
+    gate", which named nothing real -- the registry had one entry. The
+    remedy is only actionable if it names the scanner to re-run with."""
+    (blocker,) = check_preconditions({"ownerType": "Organization"}).blockers
+    assert "trufflehog" in blocker
+
+
+def test_every_remedy_the_blocker_offers_actually_exists():
+    """Guards the message against both ways it could drift: naming a scanner
+    that is not registered, and naming zero licenseless alternatives (leaving
+    the remedy with nothing real to offer). `SCANNER_IDS == tuple(REGISTRY)`
+    always, so merely checking membership of the names found in REGISTRY is a
+    tautology; what can actually drift is whether any of the ids the message
+    names besides the one that triggered it (gitleaks) are licenseless."""
+    all_scanner_ids = set(REGISTRY) | {"nonexistent-scanner", "semgrep"}
+    (blocker,) = check_preconditions({"ownerType": "Organization"}).blockers
+    named = [s for s in all_scanner_ids if s in blocker]
+    assert named == [s for s in named if s in REGISTRY], (
+        f"blocker names a scanner that is not registered: {blocker!r}"
+    )
+    licenseless_named = [s for s in named if REGISTRY[s].license_env is None]
+    assert licenseless_named, (
+        "blocker must name at least one registered, licenseless scanner as "
+        f"a real remedy (named: {named!r})"
+    )
+
+
+def test_trufflehog_carries_a_base_equals_head_advisory():
+    """Rare, not systematic -- so it belongs in the channel reported
+    ALONGSIDE a successful init, never instead of one."""
+    result = check_preconditions({"ownerType": "User", "scanner": "trufflehog"})
+    assert result.blockers == ()
+    (advisory,) = result.advisories
+    assert "BASE" in advisory and "HEAD" in advisory
+    assert "exits 1" in advisory
+
+
+def test_base_equals_head_advisory_is_absent_for_gitleaks():
+    """It is a property of trufflehog's action, not of scanning generally."""
+    advisories = check_preconditions({"ownerType": "User"}).advisories
+    assert not any("BASE" in a for a in advisories)
+
+
+def test_trufflehog_is_never_blocked_in_an_org_repo():
+    """The advisory must not have quietly become a blocker -- that would
+    reintroduce exactly the dead end #27 exists to remove."""
+    assert check_preconditions({
+        "ownerType": "Organization", "scanner": "trufflehog",
+    }).blockers == ()
