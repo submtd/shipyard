@@ -40,6 +40,32 @@ and could stop an installed copy from updating.
   reporting *everything* trains a team to ignore the check, which is the
   failure mode the organization blocker exists to prevent.
 
+- **`rigging` drives pnpm, yarn, and bun, not just npm.** `.rigging.json`
+  gained `stacks.node.packageManager`, and `rigging:init` detects the right
+  value rather than asking. The node job's install and test steps now come
+  from a package-manager registry instead of being hardcoded to `npm ci` /
+  `npm test`, so an npm repo's rendered workflow is byte-identical while a
+  pnpm repo finally gets one that works.
+
+  Yarn 1 and Yarn 2+ are separate entries (`yarn1`, `yarn-berry`) because
+  their install flags are mutually incompatible — `--frozen-lockfile` is an
+  error on berry and `--immutable` is an error on classic — and `yarn.lock`
+  does not say which. When nothing declares the major, `rigging:init` refuses
+  and says so, rather than guessing and rendering an install step that cannot
+  work.
+
+  Two lockfiles at the repo root is likewise a refusal, not a precedence
+  rule: it means the project is mid-migration or carrying a stale file, and
+  rigging will not pick for you.
+
+### Fixed
+
+- **`rigging:init` no longer refuses every pnpm, yarn, and bun repo.** 0.6.0
+  taught it to refuse rather than hand those repos an `npm ci` workflow that
+  could never pass. That was right, and it left them with no CI at all. The
+  refusal table has been inverted: the same lockfiles that meant "cannot
+  drive this" now say which manager to drive.
+
 ## [0.6.0] - 2026-07-22
 
 Minor rather than patch: two of these fixes change what `init` does in repos
