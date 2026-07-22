@@ -75,10 +75,15 @@ def test_stacks_values_are_stack_configs(tmp_path):
 
 
 def test_stack_config_is_frozen():
+    """FrozenInstanceError specifically, not a bare Exception -- a bare
+    `pytest.raises(Exception)` passes on a typo in the attribute name and so
+    proves nothing about frozenness. Matches keel/tests/test_facts.py."""
+    import dataclasses
+
     from rigging.config import StackConfig
 
     sc = StackConfig(versions=("3.12",))
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         sc.versions = ("3.11",)
 
 
