@@ -18,6 +18,12 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-22
+
+Minor rather than patch: two of these fixes change what `init` does in repos
+where it previously produced files, and an existing user can hit either on a
+re-run. Both refusals are described below.
+
 Three adoption blockers reported from a real migration onto the suite
 (issue #24): an org-owned pnpm + turbo TypeScript monorepo on gitflow, taking
 fork contributions -- four configurations shipyard's own dogfooding cannot

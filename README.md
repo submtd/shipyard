@@ -325,8 +325,14 @@ other change.
 
 ## Status
 
-**v0.5.1.** All six plugins have shipped and version in lockstep. Everything
+**v0.6.0.** All six plugins have shipped and version in lockstep. Everything
 before 0.3.0 was pre-release; see the [CHANGELOG](CHANGELOG.md).
+
+Three `init` skills now **refuse to scaffold** rather than render an artifact
+that cannot work in the target repo: `hull:init` in an organization-owned repo
+with no scanner license, and `rigging:init` in a repo driven by pnpm, yarn, or
+bun. Both say why, and both are a change from 0.5.1, which produced files in
+those cases.
 
 Each plugin's `init` skill scaffolds its config and renders its artifact,
 never overwriting a file that already exists:

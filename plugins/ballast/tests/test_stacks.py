@@ -6,7 +6,7 @@ from ballast.stacks import REGISTRY, STACK_IDS, StackSpec
 
 def test_ballast_version():
     import ballast
-    assert ballast.__version__ == "0.5.1"
+    assert ballast.__version__ == "0.6.0"
 
 
 def test_registry_keys():
