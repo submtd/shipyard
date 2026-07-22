@@ -6,8 +6,9 @@ description: Use to set up secret scanning in a repository via hull - proposes a
 # Initialising hull in a repo
 
 This scaffolds the **secret-scanning** layer only: a `.hull.json` config and
-one rendered GitHub Actions workflow that runs a secret scanner (gitleaks,
-today's only registered scanner) on push and pull request. It does not touch
+one rendered GitHub Actions workflow that runs a secret scanner (`gitleaks`
+by default, or `trufflehog` — see section 3) on push and pull request. It
+does not touch
 the test-runner config (`ballast`), the CI pipeline that runs the test suite
 (`rigging`), `.gitignore` hygiene (`stow`), or the git-lifecycle layer —
 branch protection, PR/issue templates, CODEOWNERS, the changelog gate
