@@ -113,7 +113,10 @@ def _valid_package_managers(signals, stack_ids):
                 f"signals['packageManagers'] names stack {stack_id!r}, which "
                 f"has no package manager to select."
             )
-        if manager_id not in NODE_PACKAGE_MANAGERS:
+        # isinstance first: an unhashable manager_id (a list, a dict) would
+        # raise TypeError from the dict-membership test below rather than the
+        # ValueError this validator's contract promises for a bad field.
+        if not isinstance(manager_id, str) or manager_id not in NODE_PACKAGE_MANAGERS:
             raise ValueError(
                 f"signals['packageManagers'][{stack_id!r}] must be one of "
                 f"{', '.join(NODE_PACKAGE_MANAGERS)} (got {manager_id!r})."

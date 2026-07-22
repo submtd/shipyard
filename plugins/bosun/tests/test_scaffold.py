@@ -3,10 +3,54 @@ import json
 
 import pytest
 
-from bosun.config import load_config
+from bosun import scaffold
+from bosun.config import CONFIG_NAME, load_config
 from bosun.ecosystems import ECOSYSTEM_IDS, INTERVALS
 from bosun.scaffold import (DEPENDABOT_FILES, classify_files,
                             keel_integration_branch, propose_config)
+
+ABSENT = object()
+
+
+def _candidate_signals(space):
+    """Every combination of one sample per signal key. A key whose chosen
+    sample is ABSENT is omitted from the produced dict entirely."""
+    keys = sorted(space)
+    for combo in itertools.product(*(space[k] for k in keys)):
+        yield {k: v for k, v in zip(keys, combo) if v is not ABSENT}
+
+
+def _assert_round_trips(tmp_path, signals, index):
+    """The two-outcome contract for one signal combo."""
+    try:
+        cfg = propose_config(signals)
+    except ValueError:
+        return  # a deliberate rejection is an allowed outcome
+    except Exception as exc:  # noqa: BLE001 - the point is to catch the wrong type
+        pytest.fail(
+            f"propose_config({signals!r}) raised {type(exc).__name__}, not "
+            f"ValueError: {exc}"
+        )
+    sub = tmp_path / str(index)
+    sub.mkdir()
+    (sub / CONFIG_NAME).write_text(json.dumps(cfg))
+    loaded = load_config(sub)  # must not raise
+    assert loaded is not None, (
+        f"load_config returned None for {signals!r} -> {cfg!r}"
+    )
+
+
+SIGNAL_SPACE = {
+    "ecosystems": ((), ("python",), ("python", "node")),   # githubActions is always added by propose_config
+    "intervals": (
+        ABSENT,
+        {"python": INTERVALS[0]},          # valid ecosystem + valid interval (registry-sourced)
+        {"githubActions": INTERVALS[-1]},  # the always-on ecosystem, a different valid interval
+        {"bogus": INTERVALS[0]},           # unknown ecosystem id -> ValueError
+        {"python": "often"},               # unknown interval -> ValueError
+    ),
+    "targetBranch": (ABSENT, "develop"),
+}
 
 # Ecosystem ids that detect_ecosystems can ever surface (always-off only --
 # githubActions is never detected, it's the always-on one propose_config
@@ -23,36 +67,26 @@ def _all_subsets_incl_empty(ids):
 ALL_SUBSETS = list(_all_subsets_incl_empty(DETECTABLE_IDS))
 
 
+def test_signal_space_covers_every_signal_key():
+    # Loud-omission guard: add a key to SIGNAL_KEYS without declaring its
+    # samples here and this fails, rather than the round-trip silently
+    # skipping the new key.
+    assert set(SIGNAL_SPACE) == scaffold.SIGNAL_KEYS
+
+
+def test_propose_config_round_trips_over_signal_space(tmp_path):
+    for index, signals in enumerate(_candidate_signals(SIGNAL_SPACE)):
+        _assert_round_trips(tmp_path, signals, index)
+
+
 def test_no_detected_ecosystems_still_proposes_github_actions():
     cfg = propose_config({"ecosystems": []})
     assert cfg == {"ecosystems": {"githubActions": {}}}
 
 
-def test_no_detected_ecosystems_round_trips_through_load_config(tmp_path):
-    cfg = propose_config({"ecosystems": []})
-    (tmp_path / ".bosun.json").write_text(json.dumps(cfg))
-    loaded = load_config(tmp_path)
-    assert loaded is not None
-    assert set(loaded.ecosystems.keys()) == {"githubActions"}
-
-
 def test_detected_python_includes_both_github_actions_and_python():
     cfg = propose_config({"ecosystems": ["python"]})
     assert cfg == {"ecosystems": {"githubActions": {}, "python": {}}}
-
-
-@pytest.mark.parametrize("subset", ALL_SUBSETS, ids=lambda s: "-".join(s) or "none")
-def test_every_subset_round_trips_through_load_config(tmp_path, subset):
-    # The one non-negotiable guarantee: init can never write a .bosun.json
-    # that bosun itself would reject, and githubActions is always present
-    # even when nothing was detected.
-    cfg = propose_config({"ecosystems": list(subset)})
-    (tmp_path / ".bosun.json").write_text(json.dumps(cfg))
-    loaded = load_config(tmp_path)
-    assert loaded is not None
-    assert set(loaded.ecosystems.keys()) == {"githubActions", *subset}
-    for ecosystem_id in loaded.ecosystems:
-        assert loaded.ecosystems[ecosystem_id].interval == "weekly"
 
 
 def test_explicit_interval_flows_through(tmp_path):
