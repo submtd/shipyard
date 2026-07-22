@@ -375,8 +375,8 @@ nothing to do with the project's own tests:
   manager here, the same way `npm ci` always did) and a `test` script defined
   in `package.json`. Neither is scaffolded or checked by rigging today — if
   either is missing, tell the user to add it. What section 2a *does* catch is
-  ambiguity or a missing prerequisite it cannot resolve on its own — see its
-  five refusal reasons — and refuses outright rather than guessing and
+  ambiguity or a missing prerequisite it cannot resolve on its own — see the
+  refusal reasons listed there — and refuses outright rather than guessing and
   scaffolding a workflow that cannot pass.
 - **python**: the generated job installs `requirements.txt` if present
   (`if [ -f requirements.txt ]; then pip install -r requirements.txt; fi`),
