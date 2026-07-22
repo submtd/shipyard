@@ -1,7 +1,7 @@
 {
   "name": "keel",
   "displayName": "keel",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Guides a project's git lifecycle: start work, land it, ship it.",
   "license": "MIT",
   "keywords": [

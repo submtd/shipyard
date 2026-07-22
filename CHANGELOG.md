@@ -18,6 +18,18 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-21
+
+Patch: every change is a fix to behaviour that was already meant to work.
+Two caveats worth stating rather than burying:
+
+- `hull`'s rendered `security.yml` changes (it now requests
+  `pull-requests: read`), so an existing install needs regenerating -- via
+  `hull:init` or by re-rendering -- to stop failing its pull-request scans.
+- `propose_config` now rejects unknown signal keys. Any caller passing an
+  extra key was silently having it dropped; it will now raise instead. That
+  is the point of the change, but it is a call that used to "work".
+
 Five findings from an end-to-end run of the whole lifecycle in a fresh
 **private** repo under **gitflow** -- two configurations shipyard's own
 dogfooding cannot exercise, because shipyard is public and trunk.

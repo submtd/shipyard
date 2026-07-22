@@ -1,7 +1,7 @@
 {
   "name": "rigging",
   "displayName": "rigging",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Authors CI pipelines: detects a repo's stack and scaffolds a safe GitHub Actions workflow.",
   "license": "MIT",
   "keywords": [

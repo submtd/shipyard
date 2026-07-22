@@ -325,7 +325,7 @@ other change.
 
 ## Status
 
-**v0.5.0.** All six plugins have shipped and version in lockstep. Everything
+**v0.5.1.** All six plugins have shipped and version in lockstep. Everything
 before 0.3.0 was pre-release; see the [CHANGELOG](CHANGELOG.md).
 
 Each plugin's `init` skill scaffolds its config and renders its artifact,
