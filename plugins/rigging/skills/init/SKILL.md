@@ -90,8 +90,10 @@ non-null:
   configure. Carry on.
 
 The refusals are all genuine ambiguity or an unmet prerequisite — never
-missing support for a manager rigging already drives. There are five distinct
-reasons, all raised by this one function:
+missing support for a manager rigging already drives. As of this writing
+there are nine distinct reasons, all raised by this one function (count them
+against `detect.py` yourself before trusting this number — it is easy for
+prose to drift from the code that actually decides):
 
 1. **Two managers' lockfiles at the root.** The repo is mid-migration or
    carrying a stale file. rigging will not pick by precedence, because either
@@ -103,20 +105,32 @@ reasons, all raised by this one function:
 3. **A `yarn.lock` with no declared yarn major.** Yarn 1 installs with
    `--frozen-lockfile`, Yarn 2+ with `--immutable`, and each is an error on
    the other. Adding a `packageManager` field to `package.json` resolves it.
-4. **A `pnpm-lock.yaml` with no declared `packageManager`.** This one is easy
-   to underestimate, because a `pnpm-lock.yaml` alone looks like plenty of
-   signal — it unambiguously says "this is pnpm." But `pnpm/action-setup`,
-   the GitHub Action that installs pnpm onto the runner, reads which pnpm
-   *version* to install from `package.json`'s `packageManager` field (or a
-   `version:` input rigging does not set), and **errors outright** when
-   neither is present. So even though rigging already knows the manager, it
-   cannot write a setup step that survives its own first line without that
-   field. Add e.g. `"packageManager": "pnpm@9.12.0"` to `package.json` and
-   re-run.
-5. **A `package.json` declaring a manager rigging does not have registered.**
-   A declared manager rigging cannot drive is a definite instruction, not an
-   absence of signal — falling back to npm here would silently do something
-   other than what the repo asked for.
+4. **A `pnpm-lock.yaml` next to an unparseable `package.json`.** Unreadable
+   bytes, malformed JSON, or a top-level value that isn't an object. The fix
+   here differs from every other pnpm reason below: the file has to become
+   valid JSON before a `packageManager` field means anything in it.
+5. **A `pnpm-lock.yaml` with no declared `packageManager` field at all.**
+   This one is easy to underestimate, because a `pnpm-lock.yaml` alone looks
+   like plenty of signal — it unambiguously says "this is pnpm." But
+   `pnpm/action-setup`, the GitHub Action that installs pnpm onto the
+   runner, reads which pnpm *version* to install from `package.json`'s
+   `packageManager` field (or a `version:` input rigging does not set), and
+   **errors outright** when neither is present. Add e.g.
+   `"packageManager": "pnpm@9.12.0"` to `package.json` and re-run.
+6. **A `pnpm-lock.yaml` with `packageManager` declaring pnpm but pinning no
+   version** — e.g. `"packageManager": "pnpm"` or `"pnpm@"` instead of
+   `"pnpm@9.12.0"`. Naming pnpm is not the same as pinning a version
+   `pnpm/action-setup` can resolve, and the field has to carry both.
+7. **No lockfile yet, and `package.json` declares bare `yarn` with no
+   major** — the same ambiguity as reason 3, just caught before any
+   `yarn.lock` exists (e.g. a repo before its first install).
+8. **No lockfile yet, and `package.json` declares a manager rigging does not
+   have registered.** A declared manager rigging cannot drive is a definite
+   instruction, not an absence of signal — falling back to npm here would
+   silently do something other than what the repo asked for.
+9. **No lockfile yet, and `package.json` declares pnpm but pins no
+   version** — the same failure as reason 6, just caught before any
+   `pnpm-lock.yaml` exists.
 
 Note that `detect_stacks` still reports `node` as detected even when
 `node_package_manager` refuses it — it is not silently dropped. The detection
@@ -166,6 +180,13 @@ you cannot infer:
   this document is prose, and prose can be skimmed, misread, or talked out of
   by a user who says "do it anyway", whereas an exception at the one function
   that decides what goes on disk cannot be.
+- `packageManagers` — the manager section 2a selected, as
+  `{'node': <manager>}`. Pass it **always** when node is in `stacks` and 2a
+  returned a manager — omitting it here is exactly how a pnpm repo ends up
+  scaffolded with `npm ci`: nothing downstream re-detects the manager, so a
+  signal dropped at this step is gone for good. `propose_config` rejects a
+  manager named for a stack that has no manager concept (i.e. anything but
+  `node`), naming the field and the stack.
 
 Call `rigging.scaffold.propose_config(signals)` to get the `.rigging.json`
 dict, e.g.:
@@ -174,7 +195,8 @@ dict, e.g.:
     import sys, json
     sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}')
     from rigging.scaffold import propose_config
-    signals = {'stacks': ['python'], 'name': 'ci', 'unsupported': {}}
+    signals = {'stacks': ['python', 'node'], 'name': 'ci', 'unsupported': {},
+               'packageManagers': {'node': 'npm'}}
     print(json.dumps(propose_config(signals), indent=2))
     "
 
@@ -325,8 +347,9 @@ increments, not gaps in this one:
 - **package managers beyond npm, pnpm, yarn, and bun** — those four are
   driven; anything else is not detected and not expressible.
 - **custom test commands.** There is no way to tell rigging "run `make test`"
-  or "run `pnpm vitest run`" — `.rigging.json` accepts `versions` per stack
-  and nothing more, and an unknown key there is a hard `ConfigError`, so
+  or "run `pnpm vitest run`" — a stack's steps come entirely from its
+  registry entry (or, for node, its selected package manager's registry
+  entry), and an unknown key under `stacks.<id>` is a hard `ConfigError`, so
   there is deliberately no escape hatch to hand-edit the rendered steps. If
   the registry's steps are wrong for a repo, that repo needs a hand-written
   workflow until a later increment fixes it properly.
