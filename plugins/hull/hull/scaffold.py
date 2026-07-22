@@ -263,6 +263,23 @@ def check_preconditions(signals) -> Preconditions:
             f"than as a finding."
         )
 
+    # Scanner-specific and deliberately an advisory, not a blocker. Unlike
+    # the organization gate above -- which fails EVERY run, given those
+    # conditions -- this one is an edge case: the action explicitly handles a
+    # branch's first push by setting BASE to empty, and an ordinary push or
+    # pull request has distinct base and head. Stated anyway so a rare red
+    # run is diagnosed rather than mistaken for a hull bug.
+    if scanner == "trufflehog":
+        advisories.append(
+            "The trufflehog action exits 1 with \"BASE and HEAD commits are "
+            "the same\" when the range it is asked to scan is empty. hull's "
+            "triggers make that rare -- a branch's first push is handled by "
+            "the action itself, and an ordinary push or pull request has a "
+            "distinct base and head -- but if you do see that message, it is "
+            "the action declining to scan nothing, not a finding and not a "
+            "hull bug."
+        )
+
     return Preconditions(tuple(blockers), tuple(advisories))
 
 

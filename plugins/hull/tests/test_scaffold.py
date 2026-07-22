@@ -393,3 +393,27 @@ def test_every_remedy_the_blocker_offers_actually_exists():
     assert "trufflehog" in named
     for scanner_id in named:
         assert scanner_id in REGISTRY
+
+
+def test_trufflehog_carries_a_base_equals_head_advisory():
+    """Rare, not systematic -- so it belongs in the channel reported
+    ALONGSIDE a successful init, never instead of one."""
+    result = check_preconditions({"ownerType": "User", "scanner": "trufflehog"})
+    assert result.blockers == ()
+    (advisory,) = result.advisories
+    assert "BASE" in advisory and "HEAD" in advisory
+    assert "exits 1" in advisory
+
+
+def test_base_equals_head_advisory_is_absent_for_gitleaks():
+    """It is a property of trufflehog's action, not of scanning generally."""
+    advisories = check_preconditions({"ownerType": "User"}).advisories
+    assert not any("BASE" in a for a in advisories)
+
+
+def test_trufflehog_is_never_blocked_in_an_org_repo():
+    """The advisory must not have quietly become a blocker -- that would
+    reintroduce exactly the dead end #27 exists to remove."""
+    assert check_preconditions({
+        "ownerType": "Organization", "scanner": "trufflehog",
+    }).blockers == ()
