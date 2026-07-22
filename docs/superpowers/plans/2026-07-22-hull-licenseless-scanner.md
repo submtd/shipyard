@@ -74,23 +74,20 @@ def test_gitleaks_needs_no_scan_with():
 Append to `plugins/hull/tests/test_plan.py`:
 
 ```python
-def test_scan_step_carries_the_specs_scan_with():
+def test_scan_step_carries_the_specs_scan_with(monkeypatch):
     """The registry's scan_with reaches the rendered step rather than being
-    dropped between plan and render."""
+    dropped between plan and render. Staged with a patched registry because
+    no scanner declares scan_with yet -- monkeypatch.setitem, matching how
+    every other registry-staging test in this suite is written."""
     import dataclasses
 
     from hull import scanners
 
     withful = dataclasses.replace(scanners.REGISTRY["gitleaks"],
                                   scan_with={"extra_args": "--flag"})
-    original = dict(scanners.REGISTRY)
-    scanners.REGISTRY["gitleaks"] = withful
-    try:
-        job = build_plan(Config(name="security", scanner="gitleaks")).jobs[0]
-        assert job.steps[1].with_ == {"extra_args": "--flag"}
-    finally:
-        scanners.REGISTRY.clear()
-        scanners.REGISTRY.update(original)
+    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", withful)
+    job = build_plan(Config(name="security", scanner="gitleaks")).jobs[0]
+    assert job.steps[1].with_ == {"extra_args": "--flag"}
 
 
 def test_scan_step_has_no_with_when_the_spec_declares_none():
