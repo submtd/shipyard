@@ -6,7 +6,6 @@ import pytest
 from ballast import scaffold
 from ballast.config import CONFIG_NAME, load_config
 from ballast.scaffold import CONFIG_FILES, IMPORT_MODES, classify_files, propose_config
-from ballast.stacks import REGISTRY, STACK_IDS
 
 ABSENT = object()
 
@@ -38,14 +37,6 @@ def _assert_round_trips(tmp_path, signals, index):
         f"load_config returned None for {signals!r} -> {cfg!r}"
     )
 
-
-def _all_non_empty_subsets(ids):
-    for r in range(1, len(ids) + 1):
-        for combo in itertools.combinations(ids, r):
-            yield combo
-
-
-ALL_SUBSETS = list(_all_non_empty_subsets(STACK_IDS))
 
 SIGNAL_SPACE = {
     "stacks": (("python",),),   # required; python is the only registered stack
