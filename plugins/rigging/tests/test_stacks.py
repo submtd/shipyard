@@ -7,7 +7,7 @@ from rigging.stacks import REGISTRY, STACK_IDS, Step, StackSpec
 
 def test_rigging_version():
     import rigging
-    assert rigging.__version__ == "0.5.1"
+    assert rigging.__version__ == "0.6.0"
 
 
 def test_registry_keys():

@@ -13,13 +13,13 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 def test_package_imports():
     import bosun
 
-    assert bosun.__version__ == "0.5.1"
+    assert bosun.__version__ == "0.6.0"
 
 
 def test_plugin_json_parses_and_names_bosun():
     plugin = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["name"] == "bosun"
-    assert plugin["version"] == "0.5.1"
+    assert plugin["version"] == "0.6.0"
 
 
 def test_marketplace_lists_bosun():
