@@ -89,3 +89,27 @@ def test_job_is_frozen_dataclass():
     job = build_plan(cfg).jobs[0]
     with pytest.raises(Exception):
         job.id = "changed"
+
+
+def test_render_argv_leaves_simple_words_unquoted():
+    """npm's output must be byte-identical, so the common case has to render
+    without quotes."""
+    from rigging.plan import render_argv
+
+    assert render_argv(("npm", "ci")) == "npm ci"
+
+
+def test_render_argv_quotes_what_the_shell_would_otherwise_read():
+    from rigging.plan import render_argv
+
+    assert render_argv(("a", "b c")) == "a 'b c'"
+    assert render_argv(("a", "b;c")) == "a 'b;c'"
+    assert render_argv(("a", "$HOME")) == "a '$HOME'"
+
+
+def test_node_job_steps_come_from_the_manager():
+    from rigging.config import Config, StackConfig
+
+    cfg = Config(name="ci", stacks={"node": StackConfig(versions=("20",))})
+    steps = build_plan(cfg).jobs[0].steps
+    assert [s.run for s in steps if s.run] == ["npm ci", "npm test"]

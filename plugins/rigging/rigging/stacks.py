@@ -41,6 +41,29 @@ class StackSpec:
     steps: tuple[Step, ...]
 
 
+@dataclass(frozen=True)
+class PackageManager:
+    """How to drive one JavaScript package manager in CI.
+
+    Install and test are argv TUPLES rather than shell strings, and that is
+    deliberate: increment 2 lets a repo supply its own test command, and an
+    argv array is the shape that makes shell metacharacters inert. Keeping
+    the registry's own defaults in the same shape means user-supplied and
+    built-in commands travel one rendering path, so neither can acquire
+    quoting behaviour the other lacks.
+    """
+
+    id: str
+    #: Root-level lockfiles that prove this manager is in charge. Several
+    #: for bun, which has shipped two names.
+    lockfiles: tuple[str, ...]
+    install: tuple[str, ...]
+    test: tuple[str, ...]
+    #: Extra steps this manager needs before `setup-node` runs -- installing
+    #: the manager itself. Empty for npm and yarn, which ship with node.
+    setup_steps: tuple[Step, ...] = ()
+
+
 REGISTRY: dict[str, StackSpec] = {
     "python": StackSpec(
         id="python",
@@ -67,45 +90,30 @@ REGISTRY: dict[str, StackSpec] = {
         matrix_var="node",
         setup_with_key="node-version",
         default_versions=("20",),
-        steps=(
-            Step(run="npm ci"),
-            Step(run="npm test"),
-        ),
+        steps=(),
     ),
 }
 
 STACK_IDS: tuple[str, ...] = tuple(REGISTRY)
 
 
-#: The one package manager the node stack's steps above can actually drive.
-#: This is not a preference -- it is a *reading* of those steps: `npm ci`
-#: installs from a `package-lock.json` and fails outright when there isn't
-#: one, and `npm test` shells out to npm's own script runner. Neither line
-#: works in a repo whose dependency graph is recorded by some other tool.
-NODE_PACKAGE_MANAGER: str = "npm"
+#: The manager assumed when a repo has a package.json and no other signal.
+#: That is simply what an npm repo looks like: npm ships with node, so the
+#: absence of any other manager's marker is itself the signal.
+DEFAULT_NODE_PACKAGE_MANAGER: str = "npm"
 
-#: Root-level markers that prove a *different* JavaScript package manager is
-#: in charge, mapped to the manager each one implies.
+#: How to drive each JavaScript package manager. This replaces the old
+#: FOREIGN_NODE_LOCKFILES table, which existed only to say "we cannot drive
+#: this" -- the same lockfiles now say WHICH manager to drive.
 #:
-#: This lives here, immediately below the node StackSpec, rather than in
-#: detect.py, because it is not a fact about detection -- it is a property of
-#: the steps directly above it. `npm ci`/`npm test` is what makes pnpm-lock.yaml
-#: disqualifying; change the steps to `pnpm install`/`pnpm test` and this table
-#: is wrong in the same edit. Keeping the constraint adjacent to the thing it
-#: constrains is the only arrangement where the two cannot silently drift
-#: apart: whoever teaches rigging to drive pnpm has to walk past this constant
-#: to do it.
-#:
-#: `detect_files=("package.json",)` is why this is needed at all. *Every*
-#: JavaScript repo has a package.json, so every pnpm/yarn/bun repo detects as
-#: "node" -- and, without this table, would be handed an `npm ci` workflow
-#: that dies on its first step in every single run.
-FOREIGN_NODE_LOCKFILES: dict[str, str] = {
-    "pnpm-lock.yaml": "pnpm",
-    "yarn.lock": "yarn",
-    # bun has shipped two lockfile names: the original binary `bun.lockb` and
-    # the newer text `bun.lock`. Both are listed because a repo may carry
-    # either one depending on when (and with which bun) it was last installed.
-    "bun.lockb": "bun",
-    "bun.lock": "bun",
+#: It lives here, beside the node StackSpec, for the reason that table did:
+#: these commands are a property of the node job, and whoever changes how
+#: that job works has to walk past them.
+NODE_PACKAGE_MANAGERS: dict[str, PackageManager] = {
+    "npm": PackageManager(
+        id="npm",
+        lockfiles=("package-lock.json",),
+        install=("npm", "ci"),
+        test=("npm", "test"),
+    ),
 }

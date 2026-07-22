@@ -35,8 +35,10 @@ def test_spec_default_versions_non_empty(key):
     assert len(REGISTRY[key].default_versions) > 0
 
 
-@pytest.mark.parametrize("key", ["python", "node"])
+@pytest.mark.parametrize("key", ["python"])
 def test_spec_steps_non_empty(key):
+    """Only python's steps live on the StackSpec itself; node's now come
+    from the selected package manager (see test_node_spec_no_longer_carries_its_own_steps)."""
     assert isinstance(REGISTRY[key].steps, tuple)
     assert len(REGISTRY[key].steps) > 0
 
@@ -95,7 +97,8 @@ def test_node_spec_contents():
     assert spec.matrix_var == "node"
     assert spec.setup_with_key == "node-version"
     assert spec.default_versions == ("20",)
-    assert spec.steps == (Step(run="npm ci"), Step(run="npm test"))
+    # spec.steps == () now: node's steps come from the selected package
+    # manager (see test_node_spec_no_longer_carries_its_own_steps below).
 
 
 def test_step_is_frozen_dataclass():
@@ -137,30 +140,40 @@ def test_every_pinned_ref_carries_a_version_comment():
 
 
 # --- what the node steps actually require (issue #24) ---------------------
+#
+# NODE_PACKAGE_MANAGER and FOREIGN_NODE_LOCKFILES (and the refusal-guard
+# tests that pinned their contents) are gone as of the package-manager
+# registry below: the lockfile-to-manager table now says WHICH manager to
+# drive instead of only which ones to refuse. detect.py still reads the old
+# names until a later task rewrites it.
 
 
-def test_node_package_manager_is_npm():
-    """The constant is a reading of the node spec's steps, not a preference:
-    if these two ever disagree, the refusal guard is guarding the wrong thing."""
-    assert stacks.NODE_PACKAGE_MANAGER == "npm"
-    for step in REGISTRY["node"].steps:
-        assert step.run.split()[0] == stacks.NODE_PACKAGE_MANAGER
+def test_npm_manager_is_registered():
+    from rigging.stacks import DEFAULT_NODE_PACKAGE_MANAGER, NODE_PACKAGE_MANAGERS
+
+    assert DEFAULT_NODE_PACKAGE_MANAGER == "npm"
+    npm = NODE_PACKAGE_MANAGERS["npm"]
+    assert npm.lockfiles == ("package-lock.json",)
+    assert npm.install == ("npm", "ci")
+    assert npm.test == ("npm", "test")
+    assert npm.setup_steps == ()
 
 
-def test_foreign_node_lockfiles_table():
-    assert stacks.FOREIGN_NODE_LOCKFILES == {
-        "pnpm-lock.yaml": "pnpm",
-        "yarn.lock": "yarn",
-        "bun.lockb": "bun",
-        "bun.lock": "bun",
-    }
+def test_manager_ids_match_their_keys():
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
+    for key, manager in NODE_PACKAGE_MANAGERS.items():
+        assert manager.id == key
 
 
-def test_foreign_node_lockfiles_never_include_npms_own_lockfile():
-    """package-lock.json is the file `npm ci` REQUIRES. Listing it here would
-    refuse to scaffold exactly the repos rigging handles correctly."""
-    assert "package-lock.json" not in stacks.FOREIGN_NODE_LOCKFILES
+def test_node_spec_no_longer_carries_its_own_steps():
+    """The node stack's steps now come from the selected manager. A leftover
+    `steps` tuple would silently win or silently be ignored -- either way it
+    would be a second, drifting source of truth."""
+    assert REGISTRY["node"].steps == ()
 
 
-def test_foreign_node_lockfiles_do_not_overlap_node_detect_files():
-    assert not set(stacks.FOREIGN_NODE_LOCKFILES) & set(REGISTRY["node"].detect_files)
+def test_python_spec_still_carries_its_own_steps():
+    """Only node is manager-driven. Python's steps are multi-line shell and
+    stay exactly where they were."""
+    assert REGISTRY["python"].steps
