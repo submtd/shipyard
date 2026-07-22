@@ -55,6 +55,25 @@ SIGNAL_KEYS = frozenset({"name", "scanner", "pushBranches", "licenseSecret"})
 PRECONDITION_SIGNAL_KEYS = SIGNAL_KEYS | {"ownerType"}
 
 
+#: The exact string `gh repo view --json owner -q .owner.type` prints for an
+#: organization-owned repo. Named rather than inlined at the comparison below
+#: because the org blocker turns on this literal matching exactly, and the
+#: domain check turns on the same set -- one constant means the guard and the
+#: validation cannot come to disagree about what "an organization" is.
+OWNER_TYPE_ORGANIZATION = "Organization"
+
+#: Every value `ownerType` may take, None aside. Enforced as a DOMAIN, not
+#: merely as a type: the blocker below fires on an exact match against
+#: OWNER_TYPE_ORGANIZATION, so a near-miss like "organization" or "org" would
+#: sail through an isinstance check, produce no blockers, and silently disable
+#: the one guard standing between an org-owned repo and a workflow that cannot
+#: pass -- with nothing left on disk afterwards to notice it by. That is the
+#: same failure PRECONDITION_SIGNAL_KEYS exists to prevent for the signal's
+#: NAME; the value deserves the same treatment, and the caller here is a skill
+#: reading prose, which is exactly the caller most likely to lower-case it.
+OWNER_TYPES = frozenset({OWNER_TYPE_ORGANIZATION, "User"})
+
+
 def _reject_unknown(signals, allowed):
     if not isinstance(signals, dict):
         raise ValueError(f"signals must be a dict (got {signals!r}).")
@@ -171,6 +190,11 @@ def check_preconditions(signals) -> Preconditions:
     hull unusable exactly where it is most useful -- a brand new repo -- and
     the advisory channel still carries the caveat.
 
+    Anything else -- including a near-miss like `"organization"` or `"org"` --
+    raises ValueError rather than being read as "not an organization". The
+    blocker fires on an exact match, so a silently-accepted variant would look
+    like a clean check while leaving the guard switched off.
+
     Unknown signal keys raise ValueError, naming them, for the same reason
     propose_config does: a dropped signal here means a guard silently did not
     run, and there is nothing left on disk afterwards to notice it by.
@@ -178,10 +202,19 @@ def check_preconditions(signals) -> Preconditions:
     _reject_unknown(signals, PRECONDITION_SIGNAL_KEYS)
 
     owner_type = signals.get("ownerType")
-    if owner_type is not None and not isinstance(owner_type, str):
+    # isinstance first: an unhashable value (a list, a dict) raises TypeError
+    # rather than returning False from a frozenset membership test, and the
+    # contract here is that bad signals raise ValueError naming the field.
+    if owner_type is not None and (
+        not isinstance(owner_type, str) or owner_type not in OWNER_TYPES
+    ):
         raise ValueError(
-            f"signals['ownerType'] must be 'Organization', 'User', or None "
-            f"(got {owner_type!r})."
+            f"signals['ownerType'] must be "
+            f"{' or '.join(repr(t) for t in sorted(OWNER_TYPES))}, or None "
+            f"(got {owner_type!r}). Pass the value of "
+            f"`gh repo view --json owner -q .owner.type` verbatim, or None if "
+            f"the lookup failed -- a near-miss like 'organization' would "
+            f"silently disable the organization guard rather than fail."
         )
 
     scanner = signals.get("scanner", "gitleaks")
@@ -199,7 +232,8 @@ def check_preconditions(signals) -> Preconditions:
     # The whole point of this guard. Without it, hull:init commits a workflow
     # that is red on its very first run, for a reason that has nothing to do
     # with the repo's code and is not stated anywhere in the file it wrote.
-    if owner_type == "Organization" and license_env and license_secret is None:
+    if (owner_type == OWNER_TYPE_ORGANIZATION and license_env
+            and license_secret is None):
         blockers.append(
             f"This repository is owned by a GitHub Organization, and the "
             f"{scanner} action requires a license key for organization-owned "

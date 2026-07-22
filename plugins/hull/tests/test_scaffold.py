@@ -318,6 +318,52 @@ def test_check_preconditions_rejects_a_near_miss_of_owner_type():
         check_preconditions({"owner_type": "Organization"})
 
 
+@pytest.mark.parametrize("near_miss", [
+    "organization",     # the likeliest slip: a model lower-casing gh's output
+    "ORGANIZATION",
+    "Organisation",     # British spelling
+    "org",
+    "Org",
+    "Bot",              # a real GitHub owner type, but not one hull models
+    "",
+])
+def test_check_preconditions_rejects_a_near_miss_of_the_owner_type_VALUE(near_miss):
+    """The value deserves the same treatment as the key above, because it has
+    the identical consequence. The blocker fires on an exact match against
+    "Organization", so any of these would pass an isinstance check, return
+    zero blockers, and hand an org-owned repo the very workflow this guard
+    exists to refuse -- with nothing on disk afterwards to notice it by."""
+    with pytest.raises(ValueError, match="ownerType"):
+        check_preconditions({"ownerType": near_miss})
+
+
+@pytest.mark.parametrize("bad", [5, ["Organization"], {"type": "Organization"}])
+def test_check_preconditions_rejects_a_non_string_owner_type(bad):
+    """Unhashable values (list, dict) included: the domain check must raise
+    ValueError naming the field, not a TypeError out of a set lookup."""
+    with pytest.raises(ValueError, match="ownerType"):
+        check_preconditions({"ownerType": bad})
+
+
+def test_owner_type_error_points_at_the_command_that_produces_it():
+    """The caller is a skill reading prose, so the message has to say where a
+    correct value comes from, not merely that this one was wrong."""
+    with pytest.raises(ValueError) as excinfo:
+        check_preconditions({"ownerType": "organization"})
+    message = str(excinfo.value)
+    assert "gh repo view" in message
+    assert "Organization" in message
+
+
+def test_the_org_blocker_and_the_domain_check_share_one_constant():
+    """If these ever drift, a value that validates could still fail to trip
+    the blocker -- which is precisely the bug being closed here."""
+    from hull.scaffold import OWNER_TYPE_ORGANIZATION, OWNER_TYPES
+
+    assert OWNER_TYPE_ORGANIZATION in OWNER_TYPES
+    assert check_preconditions({"ownerType": OWNER_TYPE_ORGANIZATION}).blockers
+
+
 def test_check_preconditions_rejects_a_hostile_license_secret():
     with pytest.raises(ValueError, match="licenseSecret"):
         check_preconditions({"ownerType": "Organization",

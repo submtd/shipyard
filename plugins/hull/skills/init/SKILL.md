@@ -76,7 +76,16 @@ signal:
 
     gh repo view --json owner -q .owner.type
 
-That prints `Organization` or `User`. It can also fail: no remote configured
+That prints `Organization` or `User`. **Pass whichever it printed through
+verbatim** — those two strings and `None` are the only values
+`check_preconditions` accepts, and it raises `ValueError` on anything else,
+including a lower-cased `organization` or an abbreviated `org`. That
+strictness is deliberate: the organization blocker fires on an exact match, so
+a near-miss quietly read as "not an organization" would return a clean result
+while leaving the guard switched off — and there would be nothing on disk
+afterwards to notice it by.
+
+The lookup can also fail: no remote configured
 yet, `gh` not authenticated, or offline. **A failed lookup is not a blocker** —
 treat it as unknown and pass `None`. Refusing to scaffold because a network
 call failed would make hull unusable on a brand-new repo, which is exactly
