@@ -221,3 +221,47 @@ def test_registry_defaults_still_fill_in_absent_versions(tmp_path):
     must not have moved where defaults come from."""
     cfg = load_config(write(tmp_path, {"stacks": {"node": {}}}))
     assert cfg.stacks["node"].versions == REGISTRY["node"].default_versions
+
+
+def test_package_manager_defaults_to_none(tmp_path):
+    """None means "unset", which build_plan reads as npm. Not written out as
+    a default so a config authored today does not freeze one answer in."""
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {}}}))
+    assert cfg.stacks["node"].package_manager is None
+
+
+def test_package_manager_is_read(tmp_path):
+    """An explicitly configured manager is carried through, and is
+    distinguishable from the unset case above. Uses "npm" because it is the
+    only registered manager at this point in the plan -- a later task adds
+    pnpm/yarn/bun and covers them in the golden tests."""
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": "npm"}}}))
+    assert cfg.stacks["node"].package_manager == "npm"
+
+
+def test_explicit_null_package_manager_means_unset(tmp_path):
+    """`dict.get` cannot distinguish an absent key from one set to null, and
+    this codebase already treats an explicit null as "unset" elsewhere (see
+    bosun's targetBranch). Pinned so the two spellings cannot drift apart."""
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": None}}}))
+    assert cfg.stacks["node"].package_manager is None
+
+
+@pytest.mark.parametrize("bad", ["npm7", "", "NPM", 5, ["npm"], {"a": 1}])
+def test_unknown_package_manager_raises_naming_the_field(tmp_path, bad):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {
+            "stacks": {"node": {"packageManager": bad}}}))
+    assert "packageManager" in str(e.value)
+
+
+def test_package_manager_rejected_for_a_stack_that_has_no_managers(tmp_path):
+    """Python has no package-manager concept, so setting one is a user
+    believing they configured something that is silently discarded -- the
+    same failure the unknown-key check exists to prevent."""
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {
+            "stacks": {"python": {"packageManager": "npm"}}}))
+    assert "packageManager" in str(e.value)

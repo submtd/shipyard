@@ -113,3 +113,20 @@ def test_node_job_steps_come_from_the_manager():
     cfg = Config(name="ci", stacks={"node": StackConfig(versions=("20",))})
     steps = build_plan(cfg).jobs[0].steps
     assert [s.run for s in steps if s.run] == ["npm ci", "npm test"]
+
+
+def test_configured_manager_drives_the_node_job():
+    from rigging.config import Config, StackConfig
+
+    cfg = Config(name="ci", stacks={
+        "node": StackConfig(versions=("20",), package_manager="npm")})
+    assert [s.run for s in build_plan(cfg).jobs[0].steps if s.run] == [
+        "npm ci", "npm test"]
+
+
+def test_unset_manager_falls_back_to_the_default():
+    from rigging.config import Config, StackConfig
+
+    cfg = Config(name="ci", stacks={"node": StackConfig(versions=("20",))})
+    assert [s.run for s in build_plan(cfg).jobs[0].steps if s.run] == [
+        "npm ci", "npm test"]
