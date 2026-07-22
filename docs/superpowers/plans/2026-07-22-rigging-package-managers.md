@@ -845,7 +845,8 @@ from rigging.detect import node_package_manager
 
 @pytest.mark.parametrize("lockfile,expected", [
     ("package-lock.json", "npm"),
-    ("pnpm-lock.yaml", "pnpm"),
+    # pnpm is deliberately absent here: it needs a declared version too, and
+    # has its own pair of tests below.
     ("bun.lockb", "bun"),
     ("bun.lock", "bun"),
 ])
@@ -888,6 +889,27 @@ def test_yarn_lockfile_without_a_declared_major_is_refused(tmp_path):
     assert manager is None
     assert "yarn.lock" in reason
     assert "packageManager" in reason
+
+
+def test_pnpm_without_a_declared_version_is_refused(tmp_path):
+    """pnpm/action-setup reads its version from package.json's
+    `packageManager` field and errors when that field is absent and no
+    version is pinned. Selecting pnpm off the lockfile alone would render a
+    job that dies on its setup step -- the exact failure this module exists
+    to prevent, and the same reasoning as the yarn-major refusal."""
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "packageManager" in reason
+    assert "pnpm-lock.yaml" in reason
+
+
+def test_pnpm_with_a_declared_version_is_selected(tmp_path):
+    """The field the refusal above asks for is exactly what makes it work."""
+    (tmp_path / "package.json").write_text('{"packageManager": "pnpm@9.12.0"}')
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    assert node_package_manager(tmp_path) == ("pnpm", None)
 
 
 def test_two_manager_lockfiles_are_refused_naming_both(tmp_path):
@@ -1064,6 +1086,24 @@ def node_package_manager(root):
                 )
             return yarn_id, None
         return family, None
+
+    if family == "pnpm" and declared != "pnpm":
+        # pnpm/action-setup takes its version from package.json's
+        # `packageManager` field when no `version:` input is given, and
+        # ERRORS when neither is present -- its README: "Optional when there
+        # is a packageManager field in the package.json. otherwise, this
+        # field is required". Selecting pnpm off the lockfile alone would
+        # therefore render a workflow that fails on its setup step every
+        # run. Same shape as the yarn-major case below, and the same answer.
+        return None, (
+            "found pnpm-lock.yaml at the repo root, but package.json has no "
+            "`packageManager` field. The pnpm setup action reads the pnpm "
+            "version from that field, and fails outright when it is missing "
+            "and no version is pinned in the workflow -- so rigging would be "
+            "writing a job that cannot get as far as installing anything. "
+            "Add a `packageManager` field to package.json (e.g. "
+            "\"pnpm@9.12.0\") and re-run."
+        )
 
     # No lockfile. The declared field still decides, and a bare package.json
     # means npm: npm ships with node, so no other manager's marker IS the
