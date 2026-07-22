@@ -75,3 +75,37 @@ REGISTRY: dict[str, StackSpec] = {
 }
 
 STACK_IDS: tuple[str, ...] = tuple(REGISTRY)
+
+
+#: The one package manager the node stack's steps above can actually drive.
+#: This is not a preference -- it is a *reading* of those steps: `npm ci`
+#: installs from a `package-lock.json` and fails outright when there isn't
+#: one, and `npm test` shells out to npm's own script runner. Neither line
+#: works in a repo whose dependency graph is recorded by some other tool.
+NODE_PACKAGE_MANAGER: str = "npm"
+
+#: Root-level markers that prove a *different* JavaScript package manager is
+#: in charge, mapped to the manager each one implies.
+#:
+#: This lives here, immediately below the node StackSpec, rather than in
+#: detect.py, because it is not a fact about detection -- it is a property of
+#: the steps directly above it. `npm ci`/`npm test` is what makes pnpm-lock.yaml
+#: disqualifying; change the steps to `pnpm install`/`pnpm test` and this table
+#: is wrong in the same edit. Keeping the constraint adjacent to the thing it
+#: constrains is the only arrangement where the two cannot silently drift
+#: apart: whoever teaches rigging to drive pnpm has to walk past this constant
+#: to do it.
+#:
+#: `detect_files=("package.json",)` is why this is needed at all. *Every*
+#: JavaScript repo has a package.json, so every pnpm/yarn/bun repo detects as
+#: "node" -- and, without this table, would be handed an `npm ci` workflow
+#: that dies on its first step in every single run.
+FOREIGN_NODE_LOCKFILES: dict[str, str] = {
+    "pnpm-lock.yaml": "pnpm",
+    "yarn.lock": "yarn",
+    # bun has shipped two lockfile names: the original binary `bun.lockb` and
+    # the newer text `bun.lock`. Both are listed because a repo may carry
+    # either one depending on when (and with which bun) it was last installed.
+    "bun.lockb": "bun",
+    "bun.lock": "bun",
+}

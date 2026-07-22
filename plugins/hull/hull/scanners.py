@@ -50,6 +50,19 @@ class ScannerSpec:
     #: pull_request run fails with 403 "Resource not accessible by
     #: integration". Read scopes only; see test_permissions_stay_least_privilege.
     permissions: tuple[str, ...] = ("contents: read",)
+    #: The environment variable this scanner reads its LICENSE KEY from, or
+    #: None when the scanner has no license gate at all. This is a property
+    #: of the tool, not of the repo, so it belongs in the registry beside the
+    #: action pin rather than in config.py -- config only decides WHICH
+    #: secret name gets piped into it, and it needs this field to know
+    #: whether piping anything in is even meaningful (see
+    #: config._valid_license_secret, which rejects `licenseSecret` outright
+    #: for a scanner whose license_env is None, rather than accepting a
+    #: setting that would silently do nothing). Only the NAME lives here; the
+    #: value is never a literal, it is always a `${{ secrets.<NAME> }}`
+    #: reference assembled in plan.py, so no key material can ever end up in
+    #: this registry or in a rendered workflow.
+    license_env: Optional[str] = None
 
 
 REGISTRY: dict[str, ScannerSpec] = {
@@ -60,6 +73,13 @@ REGISTRY: dict[str, ScannerSpec] = {
         checkout_fetch_depth="0",
         env={"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"},
         permissions=("contents: read", "pull-requests: read"),
+        # gitleaks-action v3 hard-exits (status 1, before scanning anything)
+        # when the repository's owner is a GitHub Organization and
+        # GITLEAKS_LICENSE is unset -- public or private, it makes no
+        # difference. Naming the variable here is what lets hull both render
+        # the license through to the action and refuse, at init time, to
+        # scaffold a workflow that provably cannot go green.
+        license_env="GITLEAKS_LICENSE",
     ),
 }
 

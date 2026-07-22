@@ -98,3 +98,61 @@ def test_job_is_frozen_dataclass():
     job = build_plan(cfg).jobs[0]
     with pytest.raises(Exception):
         job.id = "changed"
+
+
+# --- licenseSecret ---------------------------------------------------------
+#
+# Issue #24. When configured, the scan step's env gains the scanner's license
+# env var pointing at the named secret; when not, the env must be byte-
+# identical to what hull emitted before the key existed (the golden file is
+# the other half of that proof).
+
+
+def test_license_secret_adds_the_scanners_license_env_var():
+    cfg = Config(name="security", scanner="gitleaks",
+                 license_secret="GITLEAKS_LICENSE")
+    job = build_plan(cfg).jobs[0]
+    assert job.steps[1].env == {
+        "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+        "GITLEAKS_LICENSE": "${{ secrets.GITLEAKS_LICENSE }}",
+    }
+
+
+def test_license_secret_name_may_differ_from_the_env_var_name():
+    """The env var is fixed by the tool; the SECRET's name is the repo's
+    choice, and an org that already stores the key under another name must
+    not have to rename it."""
+    cfg = Config(name="security", scanner="gitleaks",
+                 license_secret="ORG_GITLEAKS_KEY")
+    env = build_plan(cfg).jobs[0].steps[1].env
+    assert env["GITLEAKS_LICENSE"] == "${{ secrets.ORG_GITLEAKS_KEY }}"
+
+
+def test_github_token_keeps_its_position_when_a_license_is_added():
+    """The license entry is APPENDED, so adopting licenseSecret shows up as
+    added lines in the workflow diff rather than a reordering of it."""
+    cfg = Config(name="security", scanner="gitleaks",
+                 license_secret="GITLEAKS_LICENSE")
+    env = build_plan(cfg).jobs[0].steps[1].env
+    assert list(env) == ["GITHUB_TOKEN", "GITLEAKS_LICENSE"]
+
+
+def test_env_is_unchanged_when_no_license_secret_is_configured():
+    cfg = Config(name="security", scanner="gitleaks")
+    assert build_plan(cfg).jobs[0].steps[1].env == REGISTRY["gitleaks"].env
+
+
+def test_build_plan_does_not_mutate_the_registry_spec_env():
+    """The plan copies the registry's env before adding to it -- mutating the
+    shared spec would leak one repo's license secret name into every later
+    plan built in the same process."""
+    before = dict(REGISTRY["gitleaks"].env)
+    build_plan(Config(name="security", scanner="gitleaks",
+                      license_secret="GITLEAKS_LICENSE"))
+    assert REGISTRY["gitleaks"].env == before
+
+
+def test_license_plan_is_deterministic():
+    cfg = Config(name="security", scanner="gitleaks",
+                 license_secret="GITLEAKS_LICENSE")
+    assert build_plan(cfg) == build_plan(cfg)

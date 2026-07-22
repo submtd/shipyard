@@ -39,14 +39,39 @@ CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 CHECKOUT_VERSION = "v7"
 
 
-def _build_job(scanner_id: str) -> Job:
+def _scan_env(spec: scanners.ScannerSpec, license_secret) -> dict:
+    """The scan step's env mapping: the scanner's own registry env, plus the
+    license reference when one is configured.
+
+    When `license_secret` is None -- the case for every config written before
+    the key existed -- this returns a mapping equal to `spec.env` itself, so
+    the rendered workflow stays byte-identical to what hull emitted before
+    (the golden file asserts exactly that). When it is set, one entry is
+    APPENDED, so GITHUB_TOKEN keeps its position and only new lines appear in
+    the diff; dicts preserve insertion order and the renderer walks them in
+    that order, which is what makes the output deterministic.
+
+    The value is assembled here rather than stored anywhere: hull only ever
+    holds the secret's NAME, and turns it into a `${{ secrets.<NAME> }}`
+    reference GitHub resolves at run time. The name has already been through
+    config.SECRET_NAME_RE by this point, which is what makes this the only
+    safe place to build an Actions expression out of user input.
+    """
+    env = dict(spec.env)
+    if license_secret is not None and spec.license_env is not None:
+        env[spec.license_env] = "${{ secrets." + license_secret + " }}"
+    return env
+
+
+def _build_job(scanner_id: str, license_secret=None) -> Job:
     spec = scanners.REGISTRY[scanner_id]
     checkout_step = scanners.Step(
         uses=CHECKOUT_USES,
         uses_version=CHECKOUT_VERSION,
         with_={"fetch-depth": spec.checkout_fetch_depth},
     )
-    scan_step = scanners.Step(uses=spec.action_ref, env=spec.env,
+    scan_step = scanners.Step(uses=spec.action_ref,
+                              env=_scan_env(spec, license_secret),
                               uses_version=spec.action_ref_version)
     return Job(
         id=spec.id,
@@ -56,7 +81,7 @@ def _build_job(scanner_id: str) -> Job:
 
 
 def build_plan(cfg: config.Config) -> ScanPlan:
-    job = _build_job(cfg.scanner)
+    job = _build_job(cfg.scanner, cfg.license_secret)
     return ScanPlan(name=cfg.name,
                     permissions=scanners.REGISTRY[cfg.scanner].permissions,
                     jobs=(job,),

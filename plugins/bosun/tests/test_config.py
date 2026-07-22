@@ -137,3 +137,61 @@ def test_unknown_per_ecosystem_key_raises_naming_it(tmp_path):
 def test_known_keys_still_load(tmp_path):
     cfg = load_config(write(tmp_path, {"ecosystems": {"python": {"interval": "daily"}}}))
     assert cfg.ecosystems["python"].interval == "daily"
+
+
+# --- targetBranch -----------------------------------------------------------
+#
+# Absent means "let Dependabot use the repository default branch", which is
+# the right answer under a trunk topology and the wrong one under gitflow --
+# where the default branch is production. These cases pin down that the key
+# is genuinely optional (so every config written before it existed still
+# loads unchanged) and that what it accepts is narrow enough to render into
+# YAML without quoting or escaping surprises.
+
+
+def test_target_branch_absent_is_none(tmp_path):
+    cfg = load_config(write(tmp_path, {"ecosystems": {"githubActions": {}}}))
+    assert cfg.target_branch is None
+
+
+def test_target_branch_explicit_null_is_none(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "ecosystems": {"githubActions": {}},
+        "targetBranch": None,
+    }))
+    assert cfg.target_branch is None
+
+
+def test_target_branch_is_carried_through(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "ecosystems": {"githubActions": {}},
+        "targetBranch": "develop",
+    }))
+    assert cfg.target_branch == "develop"
+
+
+def test_target_branch_accepts_slashes_and_dots(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "ecosystems": {"githubActions": {}},
+        "targetBranch": "release/1.2.x",
+    }))
+    assert cfg.target_branch == "release/1.2.x"
+
+
+@pytest.mark.parametrize("bad", [
+    "",                          # empty
+    "-develop",                  # leading dash reads as a flag
+    "develop branch",            # whitespace
+    "develop\ninjected: true",   # a newline is a new YAML key
+    'develop"',                  # would need escaping in a quoted scalar
+    "${{ github.ref }}",         # an expression, not a branch
+    5,                           # not a string
+    ["develop"],                 # not a string
+])
+def test_hostile_or_malformed_target_branch_raises(tmp_path, bad):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {
+            "ecosystems": {"githubActions": {}},
+            "targetBranch": bad,
+        }))
+    assert "targetBranch" in str(e.value)

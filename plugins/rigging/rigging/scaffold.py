@@ -41,7 +41,39 @@ def _valid_push_branches(signals):
 #: takes a default instead. That is the same reasoning the config loaders
 #: already apply to unknown FILE keys -- and it matters more here, because a
 #: dropped signal leaves nothing on disk to inspect afterwards.
-SIGNAL_KEYS = frozenset({"name", "stacks", "versions", "pushBranches"})
+SIGNAL_KEYS = frozenset({"name", "stacks", "versions", "pushBranches", "unsupported"})
+
+
+def _valid_unsupported(signals):
+    """Validate the optional `unsupported` signal, returning a {id: reason} dict.
+
+    This is `detect.unsupported_reasons(root)` passed straight through by the
+    skill. It exists so the refusal is load-bearing rather than advisory: the
+    skill is prose, and prose can be skimmed, misread, or overridden by a user
+    who says "just do it anyway". A `ValueError` out of `propose_config`
+    cannot be skimmed -- it stops the scaffold at the one place that decides
+    what goes on disk.
+
+    Absent or empty is the normal case and must behave EXACTLY as before this
+    signal existed -- no reordering of keys, no extra validation, nothing
+    observable in the returned dict. The signal only ever subtracts
+    possibilities; it can never change what a successful proposal looks like.
+    """
+    unsupported = signals.get("unsupported")
+    if unsupported is None:
+        return {}
+    if not isinstance(unsupported, dict):
+        raise ValueError(
+            f"signals['unsupported'] must be a dict of stack id -> reason "
+            f"string (got {unsupported!r})."
+        )
+    for stack_id, reason in unsupported.items():
+        if not isinstance(stack_id, str) or not isinstance(reason, str) or not reason:
+            raise ValueError(
+                f"signals['unsupported'] entries must map a stack id string "
+                f"to a non-empty reason string (got {stack_id!r}: {reason!r})."
+            )
+    return unsupported
 
 
 def _reject_unknown_signals(signals):
@@ -65,6 +97,13 @@ def propose_config(signals):
     strings; a stack without an entry there emits `{}` so config.load_config
     fills in its registry defaults.
 
+    Optional `signals["unsupported"]` is `detect.unsupported_reasons(root)`
+    passed through unchanged -- a dict of stack id -> reason string. Any stack
+    named in BOTH `stacks` and `unsupported` raises ValueError quoting the
+    reason, so a workflow that provably cannot pass is never proposed, let
+    alone written. Omitting the signal (or passing `{}`) leaves behaviour
+    byte-identical to before it existed.
+
     Every signal is validated against config.py's/stacks.py's own domains
     before the dict is built. Valid signals in -> a dict guaranteed to load
     via config.load_config (enforced by test). Invalid signals raise
@@ -72,6 +111,7 @@ def propose_config(signals):
     caller can never persist a config that rigging itself would reject.
     """
     _reject_unknown_signals(signals)
+    unsupported = _valid_unsupported(signals)
     name = signals.get("name", "ci")
     if not isinstance(name, str) or not NAME_RE.fullmatch(name):
         raise ValueError(
@@ -101,6 +141,17 @@ def propose_config(signals):
             raise ValueError(
                 f"signals['stacks'] contains unknown stack id {stack_id!r}. "
                 f"Allowed ids: {', '.join(STACK_IDS)}."
+            )
+        # Checked per stack, inside the same loop that would otherwise emit
+        # it, so there is no path that proposes a stack the caller was already
+        # told rigging cannot drive. The reason is repeated verbatim in the
+        # message rather than summarised: it is the only diagnosis the user
+        # will see, and it already names the marker, the package manager, and
+        # why the workflow could not pass.
+        if stack_id in unsupported:
+            raise ValueError(
+                f"refusing to propose a config for stack {stack_id!r}: "
+                f"{unsupported[stack_id]}"
             )
         versions = versions_by_id.get(stack_id)
         if versions:

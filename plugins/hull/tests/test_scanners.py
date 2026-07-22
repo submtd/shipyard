@@ -119,3 +119,37 @@ def test_step_fields_default_to_none():
 def test_every_pinned_ref_carries_a_version_comment():
     for spec in REGISTRY.values():
         assert spec.action_ref_version
+
+
+# --- license gates ---------------------------------------------------------
+#
+# Issue #24: gitleaks-action v3 exits 1 for an organization-owned repo when
+# GITLEAKS_LICENSE is unset. Which env var a scanner reads its license from
+# is a property of the TOOL, so it lives in the registry beside the pin.
+
+
+def test_gitleaks_declares_its_license_env_var():
+    assert REGISTRY["gitleaks"].license_env == "GITLEAKS_LICENSE"
+
+
+def test_license_env_defaults_to_none_for_a_scanner_with_no_gate():
+    """Most scanners have no license gate at all, so None -- not an empty
+    string -- is the default, and config.py keys "is this configurable?" off
+    exactly that."""
+    spec = ScannerSpec(
+        id="example",
+        action_ref="owner/action@" + "a" * 40,
+        action_ref_version="v1",
+        checkout_fetch_depth="0",
+        env={},
+    )
+    assert spec.license_env is None
+
+
+def test_registry_never_stores_a_license_VALUE():
+    """The registry holds the NAME of a license env var and nothing else. A
+    key material literal here would be committed to every repo that vendors
+    hull, so the env mappings must contain only `${{ }}` references."""
+    for spec in REGISTRY.values():
+        for value in spec.env.values():
+            assert value.startswith("${{") and value.endswith("}}"), value

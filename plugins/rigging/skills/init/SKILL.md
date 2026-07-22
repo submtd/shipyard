@@ -58,6 +58,57 @@ stack(s) apply, from rigging's currently supported set (`python`, `node`).
 Increment 1 detects and supports only these two; if the repo is neither, say
 so plainly and stop rather than proposing a config rigging can't back.
 
+## 2a. Check whether rigging can actually drive what it detected
+
+*(Fresh-scaffold flow only — run this **immediately** after section 2 and
+**before** anything is proposed, shown, or written.)*
+
+Detecting a stack is not the same as being able to build a workflow for it.
+rigging detects `node` off `package.json` alone — and *every* JavaScript repo
+has a `package.json`, including every pnpm, yarn, and bun repo. But the node
+job rigging renders is `npm ci` then `npm test`, and `npm ci` fails outright
+without a committed `package-lock.json`. Scaffolding into a pnpm repo
+therefore produces a workflow that is red on its first step of its first run,
+forever, for reasons that have nothing to do with the project's tests. That
+is worse than writing nothing: it burns CI minutes, it trains the team to
+ignore a red check, and the user has no way to fix it — `.rigging.json` has no
+escape hatch for the steps, and an unknown key there is a hard `ConfigError`.
+
+So ask first:
+
+    python3 -c "import sys, json; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from rigging.detect import unsupported_reasons; from pathlib import Path; print(json.dumps(unsupported_reasons(Path('.')), indent=2))"
+
+This returns a `{stack_id: reason}` mapping — `{}` in the common case, which
+means carry on to section 3 unchanged. A non-empty result is a **refusal**,
+not a warning:
+
+- **Print the reason verbatim.** It already names the marker that was found
+  (e.g. `pnpm-lock.yaml`, or a `packageManager` field in `package.json`), the
+  package manager that marker implies, the exact steps rigging would have
+  emitted, and why they cannot pass. Do not paraphrase it, do not soften it,
+  and do not add a "but I could try anyway" — there is nothing to try.
+- **If every detected stack is unsupported** (typically: node was the only
+  one), write **nothing at all**. No `.rigging.json`, no workflow, not even an
+  empty directory. Say what you found, print the reason, and stop. Skip
+  sections 3-6 entirely; there is nothing to verify.
+- **If some detected stack is still supported** (typically: `python` *and* an
+  unsupported `node`), continue to section 3 with **only the supported ids**
+  in `signals['stacks']`, and tell the user plainly that node was detected and
+  deliberately omitted, quoting the reason. A half-scaffold that says so is
+  honest; a full scaffold that half-works is not.
+- **Do not offer to scaffold it anyway.** If the user asks, the answer is
+  that rigging cannot emit pnpm/yarn/bun steps today (see the "not here yet"
+  list in section 6) and a hand-written workflow is the right tool until it
+  can. Point them at that rather than at a workaround that does not exist.
+
+Note that `detect_stacks` still reports the unsupported stack — it is not
+silently dropped. The detection and the diagnosis are deliberately separate
+functions so that a future increment which teaches rigging to drive pnpm
+deletes a reason and changes nothing about detection.
+
+Carry the mapping forward: section 3 passes it back in as the `unsupported`
+signal, so the refusal is enforced by code and not only by this document.
+
 ## 3. Propose the config
 
 *(Fresh-scaffold flow only.)*
@@ -87,6 +138,14 @@ you cannot infer:
   --short refs/remotes/origin/HEAD`, or `git branch --show-current` on a
   fresh repo) and set this when it isn't `main` — a repo on `master` that
   takes the default gets no push CI at all, and nothing says so.
+- `unsupported` — optional, the mapping section 2a returned, passed through
+  unchanged. Pass it **always**, even when it is `{}`; it costs nothing there
+  and it means the guard is on by default rather than by remembering. If a
+  stack appears in both `stacks` and `unsupported`, `propose_config` raises
+  `ValueError` quoting the reason and nothing is written. That is on purpose:
+  this document is prose, and prose can be skimmed, misread, or talked out of
+  by a user who says "do it anyway", whereas an exception at the one function
+  that decides what goes on disk cannot be.
 
 Call `rigging.scaffold.propose_config(signals)` to get the `.rigging.json`
 dict, e.g.:
@@ -95,7 +154,7 @@ dict, e.g.:
     import sys, json
     sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}')
     from rigging.scaffold import propose_config
-    signals = {'stacks': ['python'], 'name': 'ci'}
+    signals = {'stacks': ['python'], 'name': 'ci', 'unsupported': {}}
     print(json.dumps(propose_config(signals), indent=2))
     "
 
@@ -243,6 +302,20 @@ Note what's deliberately **not** here yet — these are later rigging
 increments, not gaps in this one:
 
 - stacks beyond `python` and `node`
+- **pnpm, yarn, and bun steps.** The node stack is `npm ci` / `npm test` and
+  nothing else. A repo managed by any other JavaScript package manager is
+  refused outright by section 2a rather than given a workflow that cannot
+  pass — rigging would rather write nothing and say why than leave a
+  permanently red check behind.
+- **custom test commands.** There is no way to tell rigging "run `make test`"
+  or "run `pnpm vitest run`" — `.rigging.json` accepts `versions` per stack
+  and nothing more, and an unknown key there is a hard `ConfigError`, so
+  there is deliberately no escape hatch to hand-edit the rendered steps. If
+  the registry's steps are wrong for a repo, that repo needs a hand-written
+  workflow until a later increment fixes it properly.
+- **service containers.** A test suite that needs Postgres, MySQL, Redis, or
+  anything else alongside the job has nowhere to declare it; the rendered
+  workflow has no `services:` block at all.
 - lint, build, and type-check jobs (today's job per stack only installs and
   runs tests)
 - dependency caching
@@ -259,7 +332,11 @@ nothing to do with the project's own tests:
   requires a committed `package-lock.json` (it fails outright without one,
   unlike `npm install`), and `npm test` requires a `test` script defined in
   `package.json`. Neither is scaffolded or checked by rigging today — if
-  either is missing, tell the user to add it.
+  either is missing, tell the user to add it. What rigging *does* now catch
+  is the harder case: a repo managed by pnpm/yarn/bun, which detects as
+  `node` off its `package.json` like every other JavaScript repo but can
+  never run `npm ci` — section 2a refuses that outright instead of scaffolding
+  it.
 - **python**: the generated job installs `requirements.txt` if present
   (`if [ -f requirements.txt ]; then pip install -r requirements.txt; fi`),
   matching GitHub's official python starter workflow. It does not yet

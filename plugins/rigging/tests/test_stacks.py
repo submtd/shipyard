@@ -134,3 +134,33 @@ def test_every_pinned_ref_carries_a_version_comment():
     assert CHECKOUT_STEP.uses_version
     for spec in REGISTRY.values():
         assert spec.setup_uses_version
+
+
+# --- what the node steps actually require (issue #24) ---------------------
+
+
+def test_node_package_manager_is_npm():
+    """The constant is a reading of the node spec's steps, not a preference:
+    if these two ever disagree, the refusal guard is guarding the wrong thing."""
+    assert stacks.NODE_PACKAGE_MANAGER == "npm"
+    for step in REGISTRY["node"].steps:
+        assert step.run.split()[0] == stacks.NODE_PACKAGE_MANAGER
+
+
+def test_foreign_node_lockfiles_table():
+    assert stacks.FOREIGN_NODE_LOCKFILES == {
+        "pnpm-lock.yaml": "pnpm",
+        "yarn.lock": "yarn",
+        "bun.lockb": "bun",
+        "bun.lock": "bun",
+    }
+
+
+def test_foreign_node_lockfiles_never_include_npms_own_lockfile():
+    """package-lock.json is the file `npm ci` REQUIRES. Listing it here would
+    refuse to scaffold exactly the repos rigging handles correctly."""
+    assert "package-lock.json" not in stacks.FOREIGN_NODE_LOCKFILES
+
+
+def test_foreign_node_lockfiles_do_not_overlap_node_detect_files():
+    assert not set(stacks.FOREIGN_NODE_LOCKFILES) & set(REGISTRY["node"].detect_files)

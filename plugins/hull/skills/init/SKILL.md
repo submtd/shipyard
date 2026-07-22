@@ -32,10 +32,12 @@ sits at its top level.)
 This has three possible outcomes, and they are not the same thing:
 
 - **No `.hull.json`** (prints `None`) — proceed with the normal
-  fresh-scaffold flow: section 2, then section 3.
-- **`.hull.json` exists and loads** (prints a `Config(...)`) — skip straight
-  to section 3, already-configured mode, using the loaded `Config`'s `name`
-  (and `scanner`) as-is. Do NOT run section 2's `propose_config` in this
+  fresh-scaffold flow: section 2, then section 3, then section 4.
+- **`.hull.json` exists and loads** (prints a `Config(...)`) — go to section
+  2 (the precondition check still applies — a config that loads can still be
+  one that cannot pass CI), then skip to section 4, already-configured mode,
+  using the loaded `Config`'s `name` (and `scanner`) as-is. Do NOT run
+  section 3's `propose_config` in this
   case — it defaults `name` to `"security"` regardless of what's already on
   disk, and letting that default leak into this flow is exactly the bug this
   section exists to prevent (a workflow's filename and its internal `name:`
@@ -54,10 +56,79 @@ Secret scanning is stack-agnostic — gitleaks scans the repo's git history
 and working tree for credential-shaped strings regardless of what language
 or framework the code is written in — so there is nothing to detect.
 
-## 2. Propose the config
+## 2. Check the preconditions before writing anything
+
+This section runs **before** `.hull.json` or any workflow file is written,
+and it is the one section whose answer can stop the whole flow. It exists
+because of a failure mode that is worse than an error: `hull:init` used to
+happily commit a workflow that **could never go green**, and said nothing.
+`gitleaks/gitleaks-action` v3 checks the repository owner's account type at
+startup, and if the owner is a GitHub **Organization** and `GITLEAKS_LICENSE`
+is unset it **exits 1 before scanning a single commit** — public or private
+makes no difference. The adopter then gets a permanently red required check
+whose message is about licensing, in a file hull wrote, for a repo whose code
+is fine. Discovering that on a pull request, days later, is the expensive way
+to learn it; discovering it here costs one `gh` call.
+
+hull's engine is pure — it runs no `gh`, opens no sockets, and shells out to
+nothing — so **this skill** does the lookup and passes the answer in as a
+signal:
+
+    gh repo view --json owner -q .owner.type
+
+That prints `Organization` or `User`. It can also fail: no remote configured
+yet, `gh` not authenticated, or offline. **A failed lookup is not a blocker** —
+treat it as unknown and pass `None`. Refusing to scaffold because a network
+call failed would make hull unusable on a brand-new repo, which is exactly
+where you most want it before the first secret gets committed. Say plainly
+that you could not determine the owner type, and carry on.
+
+Feed the result — together with the `scanner` and `licenseSecret` you are
+about to propose in section 3 — into `hull.scaffold.check_preconditions`:
+
+    python3 -c "
+    import sys, json
+    sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}')
+    from hull.scaffold import check_preconditions
+    signals = {'ownerType': 'Organization', 'scanner': 'gitleaks'}
+    result = check_preconditions(signals)
+    print(json.dumps({'blockers': list(result.blockers),
+                      'advisories': list(result.advisories)}, indent=2))
+    "
+
+(substitute the real `ownerType`; drop the key entirely, or set it to `None`,
+when the lookup failed. Add `'licenseSecret': '<NAME>'` if the user has
+already told you the secret's name, or if you are in already-configured mode
+and the loaded `Config` has one — otherwise the guard will correctly conclude
+that no license is being supplied.)
+
+The two return channels mean different things and must be handled
+differently — that is why they are separate rather than one list of strings:
+
+- **`blockers` is non-empty** — **refuse to scaffold.** Show every blocker
+  **verbatim** (it already names the cause, the exit code, and both remedies;
+  paraphrasing it loses the part the user needs to act on) and **stop here**.
+  Do not write `.hull.json`, do not render a workflow, do not offer to
+  proceed anyway. A workflow that cannot pass is worse than no workflow: it
+  trains the team to ignore a red secret-scan check, which is the one check
+  you never want ignored. The user's way forward is in the message — obtain
+  the free license key, add it as a repository or organization Actions secret,
+  and re-run `hull:init` telling you the secret's name so it lands in
+  `licenseSecret` — or pick a scanner with no license gate (there is no such
+  scanner registered today, so in practice it is the license).
+- **`advisories` is non-empty** — these are **not** blockers. Report them
+  alongside a successful init, never instead of one. Today's single advisory
+  is the fork-PR one described in section 3 under `licenseSecret`.
+
+`check_preconditions` raises `ValueError` naming the key on an unrecognised
+signal — including a near-miss like `owner_type` for `ownerType`, which would
+otherwise look configured while silently disabling the guard. Surface that
+message rather than reinterpreting it.
+
+## 3. Propose the config
 
 *(Fresh-scaffold flow only — you're here because section 1 found no
-`.hull.json`.)*
+`.hull.json` and section 2 came back with no blockers.)*
 
 Build a signals dict and ask the user only for what you cannot infer:
 
@@ -73,7 +144,7 @@ Build a signals dict and ask the user only for what you cannot infer:
   outright (on a case-sensitive filesystem, e.g. Linux/CI, `CI.yml` and
   `ci.yml` coexist as distinct files, which then collides for any teammate on
   a case-insensitive filesystem, e.g. macOS/Windows, checking out both) or via
-  the no-clobber stop in section 3 below (exact-case match). Confirm they
+  the no-clobber stop in section 4 below (exact-case match). Confirm they
   still want that name (e.g. because they've deliberately renamed rigging's
   workflow elsewhere) before using it.
 - `scanner` — optional; defaults to `"gitleaks"` inside `propose_config`,
@@ -91,6 +162,37 @@ Build a signals dict and ask the user only for what you cannot infer:
   (`git symbolic-ref --short refs/remotes/origin/HEAD`) and set this when it isn't `main` — a repo on
   `master` that takes the default gets no push scan at all, and nothing says
   so. Use the same value rigging's `.rigging.json` has, if it exists.
+- `licenseSecret` — optional, defaults to absent. The **name** of the GitHub
+  Actions secret holding the scanner's license key — never the key itself.
+  hull never sees, stores, or transmits key material; it renders
+  `GITLEAKS_LICENSE: "${{ secrets.<licenseSecret> }}"` into the scan step's
+  `env` and lets GitHub resolve it at run time. Set this whenever section 2
+  reported the organization blocker, and whenever the repo already has such a
+  secret. The secret's name is the repo's choice and need not match the
+  environment variable — an org that already stores the key as
+  `ORG_GITLEAKS_KEY` sets `"licenseSecret": "ORG_GITLEAKS_KEY"` and hull wires
+  it to `GITLEAKS_LICENSE` for them.
+
+  This value is validated far more strictly than anything else in
+  `.hull.json` (`^[A-Za-z_][A-Za-z0-9_]*$`), because it is the only config
+  string that lands inside a GitHub Actions **expression** rather than merely
+  inside a quoted YAML scalar. A name containing a brace, a quote, a dot, a
+  dash or whitespace is refused outright — such a value could close hull's
+  `${{ ... }}` and open its own, or break out of the surrounding scalar. Real
+  GitHub secret names are a subset of the accepted pattern, so nothing a user
+  could actually have created is being turned away.
+
+  **Fork pull requests cannot read this secret, and that is by design.**
+  GitHub withholds repository and organization secrets from `pull_request`
+  runs whose head is a fork, so an untrusted contributor cannot exfiltrate
+  them. `GITLEAKS_LICENSE` therefore arrives empty on a fork PR and the
+  gitleaks job fails on those PRs **even with a valid license configured**.
+  If the repo takes fork contributions (keel's `contributions` set to
+  `"fork"` or `"both"`), tell the user to expect that red check and to treat
+  it as expected rather than as a hull bug or a leaked-secret finding — and,
+  in particular, **not** to make this job a required check for fork PRs.
+  There is no configuration that fixes it; it is a property of the platform's
+  secret model.
 
 Call `hull.scaffold.propose_config(signals)` to get the `.hull.json` dict,
 e.g.:
@@ -128,11 +230,11 @@ silently clobbered):
 
 (substitute the actual confirmed dict from above for the `cfg` literal.)
 
-Continue to section 3 to render the workflow.
+Continue to section 4 to render the workflow.
 
-## 3. Write the workflow (no-clobber)
+## 4. Write the workflow (no-clobber)
 
-*(Reached from section 1's already-loads branch, or from section 2 just
+*(Reached from section 1's already-loads branch, or from section 3 just
 after `.hull.json` is written. Either way, `.hull.json` is now on disk.)*
 
 Check whether the workflow file is already there:
@@ -180,9 +282,9 @@ What matters here is only the workflow entry.
   increment 1, and if they want hull managing it they need to remove or
   rename the existing file (or adopt it by hand) and re-run `hull:init`.
 
-Continue to section 4 to verify and report either way.
+Continue to section 5 to verify and report either way.
 
-## 4. Verify and report
+## 5. Verify and report
 
 Prove what's on disk is sound:
 
@@ -199,12 +301,16 @@ Prove what's on disk is sound:
      a single `uses:` action — so today this list is always empty; the check
      stays in place for the day a future scanner adds one.)
   2. Every `${{ ... }}` expression that appears **anywhere** in the rendered
-     output must fullmatch the whitelist `${{ secrets.GITHUB_TOKEN }}` —
-     nothing else, and never a `github.*` context reference. This is the
-     load-bearing assertion, not assertion 1: gitleaks's step does carry a
-     `${{ secrets.GITHUB_TOKEN }}` env value, so this is what actually
-     proves nothing wider (like `${{ github.event.issue.title }}` or a
-     hostile `name`) ever reaches the emitted YAML.
+     output must be a bare `${{ secrets.<NAME> }}` lookup — nothing else,
+     and never a `github.*` context reference. This is the load-bearing
+     assertion, not assertion 1: gitleaks's step does carry a
+     `${{ secrets.GITHUB_TOKEN }}` env value (and a second
+     `${{ secrets.<licenseSecret> }}` one when a license is configured), so
+     this is what actually proves nothing wider (like
+     `${{ github.event.issue.title }}`, or a hostile `name` or
+     `licenseSecret`) ever reaches the emitted YAML. The secret-name pattern
+     below is the same one `config.SECRET_NAME_RE` enforces on the way in,
+     which is why the check can be this narrow.
 
   Both checks in one pass:
 
@@ -219,32 +325,42 @@ Prove what's on disk is sound:
       bad_run = [b for b in iter_run_blocks(text) if '\${{' in b]
       assert not bad_run, bad_run
       exprs = re.findall(r'[$]\{\{.*?\}\}', text)
-      whitelist = re.compile(r'[$]\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}')
+      whitelist = re.compile(r'[$]\{\{\s*secrets\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}')
       bad_expr = [e for e in exprs if not whitelist.fullmatch(e)]
       assert not bad_expr, bad_expr
-      print('ok: no \${{ in any run block; every \${{ }} expression is secrets.GITHUB_TOKEN')
+      assert 'github.' not in text
+      print('ok: no \${{ in any run block; every \${{ }} expression is a bare secrets.<NAME> lookup')
       "
 
 Report: what you created, what you skipped (and why), the confirmed config,
 and the verification result.
 
-**Surface the gitleaks licensing caveat explicitly** — it's easy for an
-adopter to be surprised by a red job that has nothing to do with their code:
-`gitleaks/gitleaks-action` requires a free `GITLEAKS_LICENSE` for repos owned
-by a GitHub **organization** account, regardless of whether the repo is
-public or private; repos owned by a **personal** account need no license. If
-this workflow is being scaffolded for a repo owned by an **organization**,
-the gitleaks job will fail at run time unless a `GITLEAKS_LICENSE` secret
-(obtainable free from gitleaks for this case) is set as a repo or org
-secret. Tell the user this up front rather than letting them discover it via
-a failing Actions run.
+**Repeat the licensing situation in the report**, even though section 2
+already covered it — it is the single most likely cause of a red job that has
+nothing to do with the repo's code, and the person reading the final report is
+not always the person who answered section 2's questions:
+
+- `gitleaks/gitleaks-action` requires a free `GITLEAKS_LICENSE` for repos
+  owned by a GitHub **organization** account, public or private alike; repos
+  owned by a **personal** account need none. Section 2 refuses to scaffold
+  when that license is missing on an org-owned repo, so if you got this far
+  either the owner is a personal account, or `licenseSecret` is configured,
+  or the owner type could not be determined — say **which** of the three, so
+  the user knows whether a red job is expected.
+- Report every advisory `check_preconditions` returned, verbatim. Today that
+  is the fork-PR one: **fork pull requests cannot read repository or
+  organization secrets**, so the gitleaks job fails on fork PRs even with a
+  valid license. There is no config that changes this — it is how GitHub
+  protects secrets from untrusted contributors — so a repo taking fork
+  contributions (keel's `contributions` of `"fork"` or `"both"`) should not
+  make this a required check for fork PRs.
 
 Point the user at:
 
 - `rigging:init` — the sibling layer that authors the test-CI workflow
   (`.rigging.json`, `.github/workflows/ci.yml` by default). hull does not
   own that file; it only guards against a filename collision with it (see
-  section 2's warning on any case variant of `name: "ci"`).
+  section 3's warning on any case variant of `name: "ci"`).
 - `ballast:init` — the test-runner config layer (`.ballast.json`,
   `pytest.ini`) that rigging's workflow actually runs.
 - `stow:init` — baseline repo hygiene (`.stow.json`, managed `.gitignore`
@@ -257,9 +373,17 @@ in this one:
 
 - scanners beyond `gitleaks` (`hull.scanners.SCANNER_IDS` has exactly one
   entry today)
-- automating the `GITLEAKS_LICENSE` secret itself (hull can only warn that
-  an organization-owned repo needs one; setting a repo/org secret is outside
-  what a rendered workflow file can do)
+- **creating** the license secret itself. hull now renders it through
+  (`licenseSecret`, section 3) and refuses to scaffold without it on an
+  org-owned repo (section 2), but actually storing the key — `gh secret set
+  GITLEAKS_LICENSE` or the repo's Settings UI — is a privileged, one-time
+  human action that neither a rendered workflow file nor a pure engine can
+  perform, and hull deliberately never handles key material.
+- anything that would make the gitleaks job pass on a **fork** pull request.
+  Secrets are withheld from fork runs by GitHub's design; the only workarounds
+  (`pull_request_target`, or a second workflow that re-runs the scan with
+  secrets after review) hand a trusted token to untrusted code, which is not a
+  trade hull will make on a user's behalf.
 - configurable triggers (today's workflow is always
   `on: [push, pull_request]`), including a scheduled or manually-dispatched
   full-history sweep — see the adoption note below

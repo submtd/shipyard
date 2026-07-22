@@ -213,3 +213,79 @@ def test_a_near_miss_of_a_real_signal_is_rejected():
     and silently isn't."""
     with pytest.raises(ValueError):
         propose_config(dict({'stacks': ['python']}, stack=["python"]))
+
+
+# --- the refusal is load-bearing, not advisory (issue #24) -----------------
+#
+# The init skill is prose, and prose can be skimmed or overridden. Routing the
+# detected reasons back through propose_config makes the refusal happen at the
+# one place that decides what goes on disk.
+
+PNPM_REASON = "found pnpm-lock.yaml at the repo root ... npm ci cannot work here."
+
+
+def test_unsupported_stack_raises_naming_stack_and_reason():
+    with pytest.raises(ValueError) as excinfo:
+        propose_config({"stacks": ["node"], "unsupported": {"node": PNPM_REASON}})
+    message = str(excinfo.value)
+    assert "node" in message
+    assert PNPM_REASON in message
+
+
+def test_unsupported_entry_for_a_stack_not_being_proposed_is_ignored():
+    """Polyglot repo, python only: node is unsupported but not asked for, so
+    the python scaffold proceeds untouched."""
+    cfg = propose_config({"stacks": ["python"], "unsupported": {"node": PNPM_REASON}})
+    assert cfg == {"name": "ci", "stacks": {"python": {}}}
+
+
+def test_absent_unsupported_signal_is_byte_identical_to_before():
+    assert propose_config({"stacks": ["python", "node"]}) == propose_config(
+        {"stacks": ["python", "node"], "unsupported": {}}
+    )
+
+
+def test_empty_unsupported_signal_changes_nothing():
+    cfg = propose_config({"stacks": ["node"], "unsupported": {}})
+    assert cfg == {"name": "ci", "stacks": {"node": {}}}
+
+
+@pytest.mark.parametrize("bad", ["node", ["node"], 5])
+def test_unsupported_signal_must_be_a_dict(bad):
+    with pytest.raises(ValueError, match="unsupported"):
+        propose_config({"stacks": ["python"], "unsupported": bad})
+
+
+@pytest.mark.parametrize("bad", [{"node": ""}, {"node": 5}, {5: "why"}])
+def test_unsupported_entries_must_map_id_to_non_empty_reason(bad):
+    with pytest.raises(ValueError, match="unsupported"):
+        propose_config({"stacks": ["python"], "unsupported": bad})
+
+
+def test_unsupported_is_an_allowed_signal_key():
+    from rigging.scaffold import SIGNAL_KEYS
+    assert "unsupported" in SIGNAL_KEYS
+
+
+def test_end_to_end_pnpm_repo_is_refused(tmp_path):
+    """The wiring the skill performs: detect, then propose with the reasons."""
+    from rigging.detect import detect_stacks, unsupported_reasons
+
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    stacks_found = detect_stacks(tmp_path)
+    reasons = unsupported_reasons(tmp_path)
+    with pytest.raises(ValueError) as excinfo:
+        propose_config({"stacks": list(stacks_found), "unsupported": reasons})
+    assert "pnpm" in str(excinfo.value)
+
+
+def test_end_to_end_polyglot_pnpm_repo_scaffolds_python_only(tmp_path):
+    from rigging.detect import unsupported_reasons
+
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    reasons = unsupported_reasons(tmp_path)
+    cfg = propose_config({"stacks": ["python"], "unsupported": reasons})
+    assert cfg["stacks"] == {"python": {}}

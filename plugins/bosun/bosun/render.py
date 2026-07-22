@@ -29,12 +29,24 @@ def _quote(value: str) -> str:
 
 
 def _update_lines(update: Update) -> list[str]:
-    return [
+    lines = [
         f"  - package-ecosystem: {_quote(update.package_ecosystem)}",
         f"    directory: {_quote(update.directory)}",
+    ]
+    # Emitted only when configured, and placed before `schedule:` so the
+    # entry reads "what, where, against which branch, how often". A None
+    # target_branch omits the key rather than rendering an empty or null
+    # value: Dependabot treats an absent `target-branch` as "the repository
+    # default branch", and there is no literal that means the same thing.
+    # This is also what keeps output byte-identical for every config written
+    # before this key existed.
+    if update.target_branch is not None:
+        lines.append(f"    target-branch: {_quote(update.target_branch)}")
+    lines.extend([
         "    schedule:",
         f"      interval: {_quote(update.interval)}",
-    ]
+    ])
+    return lines
 
 
 def render(plan: DependabotPlan) -> str:
