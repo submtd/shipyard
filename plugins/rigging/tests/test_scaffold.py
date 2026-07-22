@@ -3,9 +3,67 @@ import json
 
 import pytest
 
-from rigging.config import StackConfig, load_config
+from rigging import scaffold
+from rigging.config import CONFIG_NAME, StackConfig, load_config
 from rigging.scaffold import CI_FILES, classify_files, propose_config
-from rigging.stacks import REGISTRY, STACK_IDS
+from rigging.stacks import NODE_PACKAGE_MANAGERS, REGISTRY, STACK_IDS
+
+ABSENT = object()
+
+
+def _candidate_signals(space):
+    """Every combination of one sample per signal key. A key whose chosen
+    sample is ABSENT is omitted from the produced dict entirely."""
+    keys = sorted(space)
+    for combo in itertools.product(*(space[k] for k in keys)):
+        yield {k: v for k, v in zip(keys, combo) if v is not ABSENT}
+
+
+def _assert_round_trips(tmp_path, signals, index):
+    """The two-outcome contract for one signal combo."""
+    try:
+        cfg = propose_config(signals)
+    except ValueError:
+        return  # a deliberate rejection is an allowed outcome
+    except Exception as exc:  # noqa: BLE001 - the point is to catch the wrong type
+        pytest.fail(
+            f"propose_config({signals!r}) raised {type(exc).__name__}, not "
+            f"ValueError: {exc}"
+        )
+    sub = tmp_path / str(index)
+    sub.mkdir()
+    (sub / CONFIG_NAME).write_text(json.dumps(cfg))
+    loaded = load_config(sub)  # must not raise
+    assert loaded is not None, (
+        f"load_config returned None for {signals!r} -> {cfg!r}"
+    )
+
+
+SIGNAL_SPACE = {
+    "name": (ABSENT, "ci"),
+    "stacks": (("python",), ("node",), ("python", "node")),  # required: no ABSENT
+    "versions": (ABSENT, {"python": ["3.12"]}, {"node": ["20"]}),
+    "pushBranches": (ABSENT, ["main"]),
+    "unsupported": (ABSENT, {"python": "no test runner detected"}),
+    "packageManagers": (
+        ABSENT,
+        {"node": "pnpm"},          # valid iff node is in stacks
+        {"python": "npm"},         # python has no manager -> ValueError (break #3)
+        {"node": ["pnpm"]},        # unhashable manager id -> must be ValueError (break #4)
+    ),
+}
+
+
+def test_signal_space_covers_every_signal_key():
+    # Loud-omission guard: add a key to SIGNAL_KEYS without declaring its
+    # samples here and this fails, rather than the round-trip silently
+    # skipping the new key.
+    assert set(SIGNAL_SPACE) == scaffold.SIGNAL_KEYS
+
+
+def test_propose_config_round_trips_over_signal_space(tmp_path):
+    for index, signals in enumerate(_candidate_signals(SIGNAL_SPACE)):
+        _assert_round_trips(tmp_path, signals, index)
 
 
 def _all_non_empty_subsets(ids):
@@ -21,20 +79,6 @@ def test_single_stack_proposes_dict_with_defaults():
     cfg = propose_config({"stacks": ("python",)})
     assert cfg["name"] == "ci"
     assert cfg["stacks"] == {"python": {}}
-
-
-@pytest.mark.parametrize("subset", ALL_SUBSETS, ids=lambda s: "-".join(s))
-def test_every_non_empty_subset_round_trips_through_load_config(tmp_path, subset):
-    # The one non-negotiable guarantee: init can never write a .rigging.json
-    # that rigging itself would reject.
-    cfg = propose_config({"stacks": subset})
-    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
-    loaded = load_config(tmp_path)  # must not raise
-    assert loaded is not None
-    assert loaded.name == "ci"
-    assert set(loaded.stacks.keys()) == set(subset)
-    for stack_id in subset:
-        assert loaded.stacks[stack_id].versions == REGISTRY[stack_id].default_versions
 
 
 def test_explicit_versions_flow_through(tmp_path):
