@@ -16,7 +16,7 @@ CONFIG_NAME = ".rigging.json"
 #: something they didn't, and the resulting behaviour change surfaces far
 #: from its cause.
 TOP_LEVEL_KEYS = frozenset({"name", "stacks", "pushBranches"})
-STACK_KEYS = frozenset({"versions"})
+STACK_KEYS = frozenset({"versions", "packageManager"})
 
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -43,9 +43,29 @@ BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 
 @dataclass(frozen=True)
+class StackConfig:
+    """One stack's settings.
+
+    A dataclass rather than a bare versions tuple because the next two
+    increments each add a per-stack key (a custom test command, then service
+    containers). Parallel dicts keyed by stack id would be three chances for
+    the same repo's settings to desync; one container per stack cannot.
+    """
+
+    versions: tuple[str, ...]
+
+    #: Which JavaScript package manager drives this stack's job, or None to
+    #: take the registry default. Only meaningful for `node`; validated
+    #: against stacks.NODE_PACKAGE_MANAGERS rather than a free string, so an
+    #: unknown value fails here instead of rendering a workflow that runs a
+    #: command the runner does not have.
+    package_manager: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class Config:
     name: str
-    stacks: dict[str, tuple[str, ...]]
+    stacks: dict[str, StackConfig]
     push_branches: tuple[str, ...] = DEFAULT_PUSH_BRANCHES
 
 
@@ -73,6 +93,37 @@ def _valid_versions(value, stack_id):
             )
         versions.append(v)
     return tuple(versions)
+
+
+def _valid_package_manager(value, stack_id):
+    """Validate an optional `packageManager` for one stack.
+
+    Rejects it outright for a stack with no manager concept (today, anything
+    but node) rather than accepting a setting that would do nothing. That is
+    the same reasoning the unknown-key check applies one level up: a silently
+    discarded setting leaves the user believing they configured something.
+    """
+    if value is None:
+        return None
+    # isinstance BEFORE the membership test: an unhashable value (a list, a
+    # dict) raises TypeError out of `in` on a dict, and the contract here is
+    # that bad config raises ConfigError naming the field.
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'stacks.{stack_id}.packageManager' must be a "
+            f"string (got {value!r})."
+        )
+    if stack_id != "node":
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'stacks.{stack_id}.packageManager' is set, but "
+            f"stack {stack_id!r} has no package manager to select; remove it."
+        )
+    if value not in stacks.NODE_PACKAGE_MANAGERS:
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'stacks.{stack_id}.packageManager' must be one "
+            f"of {', '.join(stacks.NODE_PACKAGE_MANAGERS)} (got {value!r})."
+        )
+    return value
 
 
 def _valid_push_branches(value):
@@ -122,7 +173,7 @@ def load_config(root: Path) -> Optional[Config]:
             f"JSON object (got {stacks_raw!r})."
         )
 
-    resolved: dict[str, tuple[str, ...]] = {}
+    resolved: dict[str, StackConfig] = {}
     for stack_id, stack_value in stacks_raw.items():
         if stack_id not in stacks.STACK_IDS:
             raise ConfigError(
@@ -148,6 +199,9 @@ def load_config(root: Path) -> Optional[Config]:
             versions = stacks.REGISTRY[stack_id].default_versions
         else:
             versions = _valid_versions(versions_raw, stack_id)
-        resolved[stack_id] = versions
+        package_manager = _valid_package_manager(
+            stack_value.get("packageManager"), stack_id)
+        resolved[stack_id] = StackConfig(versions=versions,
+                                         package_manager=package_manager)
 
     return Config(name=name, stacks=resolved, push_branches=push_branches)

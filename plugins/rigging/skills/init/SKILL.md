@@ -58,56 +58,90 @@ stack(s) apply, from rigging's currently supported set (`python`, `node`).
 Increment 1 detects and supports only these two; if the repo is neither, say
 so plainly and stop rather than proposing a config rigging can't back.
 
-## 2a. Check whether rigging can actually drive what it detected
+## 2a. Select the JavaScript package manager
 
-*(Fresh-scaffold flow only — run this **immediately** after section 2 and
-**before** anything is proposed, shown, or written.)*
+*(Fresh-scaffold flow only — run this immediately after section 2 and before
+anything is proposed, shown, or written.)*
 
-Detecting a stack is not the same as being able to build a workflow for it.
-rigging detects `node` off `package.json` alone — and *every* JavaScript repo
-has a `package.json`, including every pnpm, yarn, and bun repo. But the node
-job rigging renders is `npm ci` then `npm test`, and `npm ci` fails outright
-without a committed `package-lock.json`. Scaffolding into a pnpm repo
-therefore produces a workflow that is red on its first step of its first run,
-forever, for reasons that have nothing to do with the project's tests. That
-is worse than writing nothing: it burns CI minutes, it trains the team to
-ignore a red check, and the user has no way to fix it — `.rigging.json` has no
-escape hatch for the steps, and an unknown key there is a hard `ConfigError`.
+rigging detects `node` off `package.json` alone, and every JavaScript repo has
+one — pnpm, yarn, and bun repos included. Which manager is in charge decides
+the install and test steps entirely, and the wrong answer renders a workflow
+that fails on its first step of every run.
 
-So ask first:
+    python3 -c "import sys, json; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from rigging.detect import node_package_manager; from pathlib import Path; print(json.dumps(node_package_manager(Path('.'))))"
 
-    python3 -c "import sys, json; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from rigging.detect import unsupported_reasons; from pathlib import Path; print(json.dumps(unsupported_reasons(Path('.')), indent=2))"
+This prints a two-element list, `[manager, reason]`, of which exactly one is
+non-null:
 
-This returns a `{stack_id: reason}` mapping — `{}` in the common case, which
-means carry on to section 3 unchanged. A non-empty result is a **refusal**,
-not a warning:
+- **A manager** (`"npm"`, `"pnpm"`, `"yarn1"`, `"yarn-berry"`, `"bun"`) — pass
+  it to `propose_config` as `signals['packageManagers'] = {'node': <manager>}`.
+  Say which manager you detected and what told you, rather than presenting it
+  as a choice you made. If the manager is `yarn-berry`, know that the
+  rendered job adds an extra `corepack enable` step right after
+  `actions/setup-node`: GitHub's runners ship Yarn 1.22.x, and `--immutable`
+  (the flag berry installs with) is a Yarn 2+ flag that classic yarn errors
+  on, so that step is what makes the runner capable of running berry's
+  install line at all.
+- **A reason** — this is a **refusal**, not a warning. Print it verbatim; it
+  already names the files it found and what the user must do. Do not scaffold
+  the node stack. If python is also detected, scaffold that alone and say
+  plainly that node was omitted and why.
+- **Both null** — there is no `package.json`, so there is no node stack to
+  configure. Carry on.
 
-- **Print the reason verbatim.** It already names the marker that was found
-  (e.g. `pnpm-lock.yaml`, or a `packageManager` field in `package.json`), the
-  package manager that marker implies, the exact steps rigging would have
-  emitted, and why they cannot pass. Do not paraphrase it, do not soften it,
-  and do not add a "but I could try anyway" — there is nothing to try.
-- **If every detected stack is unsupported** (typically: node was the only
-  one), write **nothing at all**. No `.rigging.json`, no workflow, not even an
-  empty directory. Say what you found, print the reason, and stop. Skip
-  sections 3-6 entirely; there is nothing to verify.
-- **If some detected stack is still supported** (typically: `python` *and* an
-  unsupported `node`), continue to section 3 with **only the supported ids**
-  in `signals['stacks']`, and tell the user plainly that node was detected and
-  deliberately omitted, quoting the reason. A half-scaffold that says so is
-  honest; a full scaffold that half-works is not.
-- **Do not offer to scaffold it anyway.** If the user asks, the answer is
-  that rigging cannot emit pnpm/yarn/bun steps today (see the "not here yet"
-  list in section 6) and a hand-written workflow is the right tool until it
-  can. Point them at that rather than at a workaround that does not exist.
+The refusals are all genuine ambiguity or an unmet prerequisite — never
+missing support for a manager rigging already drives. As of this writing
+there are nine distinct reasons, all raised by this one function (count them
+against `detect.py` yourself before trusting this number — it is easy for
+prose to drift from the code that actually decides):
 
-Note that `detect_stacks` still reports the unsupported stack — it is not
-silently dropped. The detection and the diagnosis are deliberately separate
-functions so that a future increment which teaches rigging to drive pnpm
-deletes a reason and changes nothing about detection.
+1. **Two managers' lockfiles at the root.** The repo is mid-migration or
+   carrying a stale file. rigging will not pick by precedence, because either
+   answer is as likely to be wrong as right.
+2. **A lockfile that disagrees with `package.json`'s declared
+   `packageManager`.** e.g. a `pnpm-lock.yaml` sitting next to
+   `"packageManager": "yarn@4.0.0"`. rigging will not guess which one is
+   authoritative; the two have to agree before it will write anything.
+3. **A `yarn.lock` with no declared yarn major.** Yarn 1 installs with
+   `--frozen-lockfile`, Yarn 2+ with `--immutable`, and each is an error on
+   the other. Adding a `packageManager` field to `package.json` resolves it.
+4. **A `pnpm-lock.yaml` next to an unparseable `package.json`.** Unreadable
+   bytes, malformed JSON, or a top-level value that isn't an object. The fix
+   here differs from every other pnpm reason below: the file has to become
+   valid JSON before a `packageManager` field means anything in it.
+5. **A `pnpm-lock.yaml` with no declared `packageManager` field at all.**
+   This one is easy to underestimate, because a `pnpm-lock.yaml` alone looks
+   like plenty of signal — it unambiguously says "this is pnpm." But
+   `pnpm/action-setup`, the GitHub Action that installs pnpm onto the
+   runner, reads which pnpm *version* to install from `package.json`'s
+   `packageManager` field (or a `version:` input rigging does not set), and
+   **errors outright** when neither is present. Add e.g.
+   `"packageManager": "pnpm@9.12.0"` to `package.json` and re-run.
+6. **A `pnpm-lock.yaml` with `packageManager` declaring pnpm but pinning no
+   version** — e.g. `"packageManager": "pnpm"` or `"pnpm@"` instead of
+   `"pnpm@9.12.0"`. Naming pnpm is not the same as pinning a version
+   `pnpm/action-setup` can resolve, and the field has to carry both.
+7. **No lockfile yet, and `package.json` declares bare `yarn` with no
+   major** — the same ambiguity as reason 3, just caught before any
+   `yarn.lock` exists (e.g. a repo before its first install).
+8. **No lockfile yet, and `package.json` declares a manager rigging does not
+   have registered.** A declared manager rigging cannot drive is a definite
+   instruction, not an absence of signal — falling back to npm here would
+   silently do something other than what the repo asked for.
+9. **No lockfile yet, and `package.json` declares pnpm but pins no
+   version** — the same failure as reason 6, just caught before any
+   `pnpm-lock.yaml` exists.
 
-Carry the mapping forward: section 3 passes it back in as the `unsupported`
-signal, so the refusal is enforced by code and not only by this document.
+Note that `detect_stacks` still reports `node` as detected even when
+`node_package_manager` refuses it — it is not silently dropped. The detection
+and the manager selection are deliberately separate functions so that a
+future increment (custom test commands, service containers) can extend one
+without touching the other.
+
+Carry the reason forward when there is one: section 3 passes
+`detect.unsupported_reasons(root)` back in as the `unsupported` signal (it
+wraps this same check), so the refusal is enforced by code and not only by
+this document.
 
 ## 3. Propose the config
 
@@ -146,6 +180,13 @@ you cannot infer:
   this document is prose, and prose can be skimmed, misread, or talked out of
   by a user who says "do it anyway", whereas an exception at the one function
   that decides what goes on disk cannot be.
+- `packageManagers` — the manager section 2a selected, as
+  `{'node': <manager>}`. Pass it **always** when node is in `stacks` and 2a
+  returned a manager — omitting it here is exactly how a pnpm repo ends up
+  scaffolded with `npm ci`: nothing downstream re-detects the manager, so a
+  signal dropped at this step is gone for good. `propose_config` rejects a
+  manager named for a stack that has no manager concept (i.e. anything but
+  `node`), naming the field and the stack.
 
 Call `rigging.scaffold.propose_config(signals)` to get the `.rigging.json`
 dict, e.g.:
@@ -154,7 +195,8 @@ dict, e.g.:
     import sys, json
     sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}')
     from rigging.scaffold import propose_config
-    signals = {'stacks': ['python'], 'name': 'ci', 'unsupported': {}}
+    signals = {'stacks': ['python', 'node'], 'name': 'ci', 'unsupported': {},
+               'packageManagers': {'node': 'npm'}}
     print(json.dumps(propose_config(signals), indent=2))
     "
 
@@ -302,14 +344,12 @@ Note what's deliberately **not** here yet — these are later rigging
 increments, not gaps in this one:
 
 - stacks beyond `python` and `node`
-- **pnpm, yarn, and bun steps.** The node stack is `npm ci` / `npm test` and
-  nothing else. A repo managed by any other JavaScript package manager is
-  refused outright by section 2a rather than given a workflow that cannot
-  pass — rigging would rather write nothing and say why than leave a
-  permanently red check behind.
+- **package managers beyond npm, pnpm, yarn, and bun** — those four are
+  driven; anything else is not detected and not expressible.
 - **custom test commands.** There is no way to tell rigging "run `make test`"
-  or "run `pnpm vitest run`" — `.rigging.json` accepts `versions` per stack
-  and nothing more, and an unknown key there is a hard `ConfigError`, so
+  or "run `pnpm vitest run`" — a stack's steps come entirely from its
+  registry entry (or, for node, its selected package manager's registry
+  entry), and an unknown key under `stacks.<id>` is a hard `ConfigError`, so
   there is deliberately no escape hatch to hand-edit the rendered steps. If
   the registry's steps are wrong for a repo, that repo needs a hand-written
   workflow until a later increment fixes it properly.
@@ -328,15 +368,16 @@ Two per-stack limitations worth surfacing to a maintainer explicitly, since
 they can make a freshly-scaffolded workflow red for reasons that have
 nothing to do with the project's own tests:
 
-- **node**: the generated job runs `npm ci` then `npm test`. `npm ci`
-  requires a committed `package-lock.json` (it fails outright without one,
-  unlike `npm install`), and `npm test` requires a `test` script defined in
-  `package.json`. Neither is scaffolded or checked by rigging today — if
-  either is missing, tell the user to add it. What rigging *does* now catch
-  is the harder case: a repo managed by pnpm/yarn/bun, which detects as
-  `node` off its `package.json` like every other JavaScript repo but can
-  never run `npm ci` — section 2a refuses that outright instead of scaffolding
-  it.
+- **node**: the generated job installs and tests with whichever manager
+  section 2a selected — `npm ci` / `npm test` for npm, the equivalent
+  install/test pair for pnpm, yarn1, yarn-berry, or bun. Each still needs its
+  own lockfile committed (install fails outright without one, for every
+  manager here, the same way `npm ci` always did) and a `test` script defined
+  in `package.json`. Neither is scaffolded or checked by rigging today — if
+  either is missing, tell the user to add it. What section 2a *does* catch is
+  ambiguity or a missing prerequisite it cannot resolve on its own — see the
+  refusal reasons listed there — and refuses outright rather than guessing and
+  scaffolding a workflow that cannot pass.
 - **python**: the generated job installs `requirements.txt` if present
   (`if [ -f requirements.txt ]; then pip install -r requirements.txt; fi`),
   matching GitHub's official python starter workflow. It does not yet

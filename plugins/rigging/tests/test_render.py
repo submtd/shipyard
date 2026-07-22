@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 
-from rigging.config import Config, load_config
+import pytest
+
+from rigging.config import Config, StackConfig, load_config
 from rigging import stacks
 from rigging.plan import CHECKOUT_STEP, build_plan
 from rigging.render import iter_run_blocks, render, _step_lines
@@ -65,7 +67,7 @@ def test_polyglot_plan_matches_golden_byte_for_byte(tmp_path):
 
 
 def test_version_that_looks_like_a_float_is_quoted_not_coerced():
-    cfg = Config(name="ci", stacks={"python": ("3.10",)})
+    cfg = Config(name="ci", stacks={"python": StackConfig(versions=("3.10",))})
     plan = build_plan(cfg)
     out = render(plan)
 
@@ -77,13 +79,16 @@ def test_version_that_looks_like_a_float_is_quoted_not_coerced():
 
 
 def test_render_is_deterministic():
-    cfg = Config(name="ci", stacks={"python": ("3.9", "3.12"), "node": ("20",)})
+    cfg = Config(name="ci", stacks={
+        "python": StackConfig(versions=("3.9", "3.12")),
+        "node": StackConfig(versions=("20",)),
+    })
     plan = build_plan(cfg)
     assert render(plan) == render(plan)
 
 
 def test_output_contains_expected_fragments():
-    cfg = Config(name="ci", stacks={"python": ("3.12",)})
+    cfg = Config(name="ci", stacks={"python": StackConfig(versions=("3.12",))})
     out = render(build_plan(cfg))
 
     assert 'runs-on: "ubuntu-latest"' in out
@@ -93,14 +98,17 @@ def test_output_contains_expected_fragments():
 
 
 def test_iter_run_blocks_returns_unquoted_bodies_in_order():
-    cfg = Config(name="ci", stacks={"python": ("3.12",)})
+    cfg = Config(name="ci", stacks={"python": StackConfig(versions=("3.12",))})
     out = render(build_plan(cfg))
 
     assert iter_run_blocks(out) == [PYTHON_INSTALL_RUN, "python -m pytest"]
 
 
 def test_iter_run_blocks_for_polyglot_plan_covers_both_jobs():
-    cfg = Config(name="ci", stacks={"python": ("3.12",), "node": ("20",)})
+    cfg = Config(name="ci", stacks={
+        "python": StackConfig(versions=("3.12",)),
+        "node": StackConfig(versions=("20",)),
+    })
     out = render(build_plan(cfg))
 
     assert iter_run_blocks(out) == [
@@ -137,7 +145,7 @@ def test_iter_run_blocks_block_scalar_at_end_of_document():
 
 
 def test_numeric_name_is_quoted():
-    cfg = Config(name="123", stacks={"python": ("3.12",)})
+    cfg = Config(name="123", stacks={"python": StackConfig(versions=("3.12",))})
     out = render(build_plan(cfg))
 
     assert out.startswith('name: "123"\n')
@@ -150,7 +158,7 @@ def test_numeric_name_is_quoted():
 
 
 def test_dash_name_is_quoted_and_is_valid_yaml():
-    cfg = Config(name="-", stacks={"python": ("3.12",)})
+    cfg = Config(name="-", stacks={"python": StackConfig(versions=("3.12",))})
     out = render(build_plan(cfg))
 
     assert out.startswith('name: "-"\n')
@@ -197,20 +205,20 @@ def test_step_name_is_rendered_rather_than_silently_dropped():
 
 
 def test_push_is_restricted_to_the_configured_branches():
-    text = render(build_plan(Config(name="ci", stacks={"python": ("3.12",)},
+    text = render(build_plan(Config(name="ci", stacks={"python": StackConfig(versions=("3.12",))},
                                     push_branches=("main",))))
     assert "on: [push, pull_request]" not in text
     assert 'branches: ["main"]' in text
 
 
 def test_every_configured_push_branch_is_rendered():
-    text = render(build_plan(Config(name="ci", stacks={"python": ("3.12",)},
+    text = render(build_plan(Config(name="ci", stacks={"python": StackConfig(versions=("3.12",))},
                                     push_branches=("main", "develop"))))
     assert 'branches: ["main", "develop"]' in text
 
 
 def test_pull_request_stays_unrestricted():
-    text = render(build_plan(Config(name="ci", stacks={"python": ("3.12",)},
+    text = render(build_plan(Config(name="ci", stacks={"python": StackConfig(versions=("3.12",))},
                                     push_branches=("main",))))
     assert "  pull_request:" in text
 
@@ -219,7 +227,65 @@ def test_the_python_stack_bounds_its_pytest_version():
     """An unpinned `pip install pytest` means a pytest major release can
     break CI in a repo whose own code never changed. A bounded range keeps
     patches flowing without letting a major in unannounced."""
-    text = render(build_plan(Config(name="ci", stacks={"python": ("3.12",)},
+    text = render(build_plan(Config(name="ci", stacks={"python": StackConfig(versions=("3.12",))},
                                     push_branches=("main",))))
     assert "pip install pytest\n" not in text, "the bare, unbounded install"
     assert "pytest>=8,<9" in text
+
+
+@pytest.mark.parametrize("manager,golden", [
+    ("pnpm", "node-pnpm.yml"),
+    ("yarn1", "node-yarn1.yml"),
+    ("yarn-berry", "node-yarn-berry.yml"),
+    ("bun", "node-bun.yml"),
+])
+def test_each_manager_matches_its_golden(tmp_path, manager, golden):
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": manager}}}))
+    assert render(build_plan(cfg)) == read_golden(golden)
+
+
+def test_npm_goldens_did_not_move(tmp_path):
+    """Adding four managers must not perturb the one that already worked."""
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {}}}))
+    assert render(build_plan(cfg)) == read_golden("node.yml")
+
+
+def test_yarn_majors_render_incompatible_flags(tmp_path):
+    """The whole reason they are separate entries. If these two ever render
+    the same install line, one of them is broken."""
+    def install_line(manager):
+        cfg = load_config(write(tmp_path, {
+            "stacks": {"node": {"packageManager": manager}}}))
+        return [l for l in render(build_plan(cfg)).splitlines()
+                if "yarn install" in l][0]
+
+    assert "--frozen-lockfile" in install_line("yarn1")
+    assert "--immutable" in install_line("yarn-berry")
+
+
+def test_manager_setup_runs_before_setup_node(tmp_path):
+    """pnpm and bun install the manager itself; doing that after setup-node
+    would work today but breaks the moment dependency caching is added."""
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": "pnpm"}}}))
+    out = render(build_plan(cfg))
+    assert out.index("pnpm/action-setup") < out.index("actions/setup-node")
+
+
+def test_corepack_enable_lands_between_setup_node_and_install(tmp_path):
+    """Order is the whole point: corepack ships WITH node, so enabling it
+    before setup-node would run against whatever node the image happened to
+    have, and after the install line would be too late."""
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": "yarn-berry"}}}))
+    out = render(build_plan(cfg))
+    assert out.index("actions/setup-node") < out.index("corepack enable")
+    assert out.index("corepack enable") < out.index("yarn install --immutable")
+
+
+def test_other_managers_gained_no_post_setup_step(tmp_path):
+    for manager in ("npm", "yarn1", "pnpm", "bun"):
+        cfg = load_config(write(tmp_path, {
+            "stacks": {"node": {"packageManager": manager}}}))
+        assert "corepack" not in render(build_plan(cfg))

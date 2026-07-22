@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from rigging.config import load_config
+from rigging.config import StackConfig, load_config
 from rigging.scaffold import CI_FILES, classify_files, propose_config
 from rigging.stacks import REGISTRY, STACK_IDS
 
@@ -34,7 +34,7 @@ def test_every_non_empty_subset_round_trips_through_load_config(tmp_path, subset
     assert loaded.name == "ci"
     assert set(loaded.stacks.keys()) == set(subset)
     for stack_id in subset:
-        assert loaded.stacks[stack_id] == REGISTRY[stack_id].default_versions
+        assert loaded.stacks[stack_id].versions == REGISTRY[stack_id].default_versions
 
 
 def test_explicit_versions_flow_through(tmp_path):
@@ -45,7 +45,7 @@ def test_explicit_versions_flow_through(tmp_path):
     assert cfg["stacks"]["python"] == {"versions": ["3.10", "3.11"]}
     (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
     loaded = load_config(tmp_path)
-    assert loaded.stacks == {"python": ("3.10", "3.11")}
+    assert loaded.stacks == {"python": StackConfig(versions=("3.10", "3.11"))}
 
 
 def test_explicit_versions_only_applied_to_named_stack(tmp_path):
@@ -57,8 +57,8 @@ def test_explicit_versions_only_applied_to_named_stack(tmp_path):
     assert cfg["stacks"]["node"] == {}
     (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
     loaded = load_config(tmp_path)
-    assert loaded.stacks["python"] == ("3.10",)
-    assert loaded.stacks["node"] == REGISTRY["node"].default_versions
+    assert loaded.stacks["python"].versions == ("3.10",)
+    assert loaded.stacks["node"].versions == REGISTRY["node"].default_versions
 
 
 def test_custom_name_flows_through(tmp_path):
@@ -98,7 +98,7 @@ def test_valid_explicit_version_still_round_trips(tmp_path):
     assert cfg["stacks"]["python"] == {"versions": ["3.10"]}
     (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
     loaded = load_config(tmp_path)
-    assert loaded.stacks["python"] == ("3.10",)
+    assert loaded.stacks["python"].versions == ("3.10",)
 
 
 def test_versions_not_a_dict_raises_value_error_naming_field():
@@ -289,3 +289,57 @@ def test_end_to_end_polyglot_pnpm_repo_scaffolds_python_only(tmp_path):
     reasons = unsupported_reasons(tmp_path)
     cfg = propose_config({"stacks": ["python"], "unsupported": reasons})
     assert cfg["stacks"] == {"python": {}}
+
+
+def test_package_managers_signal_reaches_the_config(tmp_path):
+    from rigging.config import load_config
+
+    cfg = propose_config({"stacks": ["node"],
+                          "packageManagers": {"node": "pnpm"}})
+    assert cfg["stacks"]["node"]["packageManager"] == "pnpm"
+    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
+    assert load_config(tmp_path).stacks["node"].package_manager == "pnpm"
+
+
+def test_absent_package_managers_signal_omits_the_key():
+    assert propose_config({"stacks": ["node"]})["stacks"]["node"] == {}
+
+
+def test_unknown_manager_in_the_signal_is_rejected():
+    with pytest.raises(ValueError, match="packageManagers"):
+        propose_config({"stacks": ["node"], "packageManagers": {"node": "npm7"}})
+
+
+def test_manager_for_a_stack_not_being_proposed_is_rejected():
+    """A signal naming a stack that is not in `stacks` is a caller mistake,
+    and dropping it silently would leave nothing on disk to notice by."""
+    with pytest.raises(ValueError, match="packageManagers"):
+        propose_config({"stacks": ["python"], "packageManagers": {"node": "pnpm"}})
+
+
+def test_manager_for_a_stack_with_no_manager_concept_is_rejected():
+    """`config._valid_package_manager` refuses `packageManager` for any
+    stack but node. propose_config must refuse it too, before it ever
+    reaches disk -- otherwise it emits a `.rigging.json` that
+    `load_config` rejects, and the init skill has already written the file
+    to disk by the time that surfaces."""
+    with pytest.raises(ValueError, match="packageManagers"):
+        propose_config({
+            "stacks": ["python", "node"],
+            "packageManagers": {"python": "npm", "node": "pnpm"},
+        })
+
+
+def test_package_managers_signal_round_trips_through_load_config(tmp_path):
+    """The one non-negotiable guarantee (see the subset round-trip test
+    above) exercised WITH the packageManagers signal set -- the existing
+    round-trip test never set this signal, which is why a stack with no
+    manager concept could reach load_config unrejected."""
+    cfg = propose_config({
+        "stacks": ["python", "node"],
+        "packageManagers": {"node": "yarn1"},
+    })
+    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)  # must not raise
+    assert loaded.stacks["node"].package_manager == "yarn1"
+    assert loaded.stacks["python"].package_manager is None
