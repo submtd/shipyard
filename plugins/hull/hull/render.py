@@ -105,7 +105,7 @@ def render(plan: ScanPlan) -> str:
         f"    branches: [{branches}]",
         "  pull_request:",
         "permissions:",
-        f"  {plan.permissions}",
+        *(f"  {scope}" for scope in plan.permissions),
         "jobs:",
     ]
     for job in plan.jobs:

@@ -107,3 +107,36 @@ def test_push_is_restricted_to_the_configured_branches():
     assert "on: [push, pull_request]" not in text
     assert 'branches: ["main"]' in text
     assert "  pull_request:" in text
+
+
+# --- Token permissions -----------------------------------------------------
+#
+# Found by an end-to-end run in a fresh PRIVATE repo: every `pull_request`
+# scan failed with 403 "Resource not accessible by integration", while every
+# `push` scan passed. gitleaks-action v3 calls
+# GET /repos/{o}/{r}/pulls/{n}/commits to enumerate a PR's commits, and
+# `contents: read` alone does not grant that. Shipyard's own dogfooding
+# cannot catch this, because shipyard is public and hull's whole point is
+# scanning repos that are not.
+
+
+def test_gitleaks_job_can_read_pull_requests():
+    text = render(build_plan(Config(name="security", scanner="gitleaks")))
+    assert "pull-requests: read" in text
+
+
+def test_contents_read_is_still_granted():
+    """Least privilege, not no privilege: the scan still needs the code."""
+    text = render(build_plan(Config(name="security", scanner="gitleaks")))
+    assert "contents: read" in text
+
+
+def test_permissions_stay_least_privilege():
+    """Every permission rendered must be a read scope. A write scope here
+    would hand a token that can push to whatever the scanner action runs."""
+    text = render(build_plan(Config(name="security", scanner="gitleaks")))
+    block = text.split("permissions:\n", 1)[1].split("jobs:", 1)[0]
+    granted = [l.strip() for l in block.splitlines() if l.strip()]
+    assert granted, "no permissions rendered at all"
+    for line in granted:
+        assert line.endswith(": read"), f"non-read permission granted: {line}"

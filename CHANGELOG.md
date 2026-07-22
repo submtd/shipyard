@@ -18,6 +18,46 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+Five findings from an end-to-end run of the whole lifecycle in a fresh
+**private** repo under **gitflow** -- two configurations shipyard's own
+dogfooding cannot exercise, because shipyard is public and trunk.
+
+### Fixed
+
+- **keel was a silent no-op on gitflow's default adoption path.** `keel:init`
+  scaffolds `.keel.json` on the current branch (normally `production`);
+  `keel:start-work` then branches from `integration`, which does not have it.
+  `load_config` returned None and the guard returned without evaluating
+  anything -- so every rule was skipped, silently, on exactly the branches
+  keel exists to watch. The guard now distinguishes "this repo never adopted
+  keel" (say nothing) from "this repo uses keel and this branch lacks the
+  config" (say so loudly), the way a malformed config already did. It warns
+  rather than blocks: without the config there is no policy to enforce, and
+  inventing one would be worse. `keel:init` and `keel:start-work` both gained
+  explicit steps so the backstop is not the plan.
+- **`hull`'s rendered workflow failed every pull-request scan on private
+  repos.** `permissions: contents: read` does not grant
+  `GET /repos/{o}/{r}/pulls/{n}/commits`, which gitleaks-action v3 calls to
+  enumerate a PR's commits, so every `pull_request` run died with 403
+  "Resource not accessible by integration" while every `push` run passed.
+  Permissions are now declared per scanner, and gitleaks asks for
+  `pull-requests: read`. Read scopes only, enforced by test.
+- **All six `propose_config` functions silently ignored unknown signals.** A
+  typo'd `producton` meant the scaffold quietly took the `main` default
+  instead of the repo's real production branch. The config *loaders* were
+  hardened against exactly this in 0.3.0; the layer above them had the
+  opposite behaviour, and it is worse there because a dropped signal leaves
+  nothing on disk to inspect afterwards.
+- `stow.desired_sections(None)` raised a bare `AttributeError` from two
+  frames deep when `.stow.json` was absent -- reachable straight from the
+  skill's own one-liner. It now names the file and the fix.
+
+### Documentation
+
+- `rigging` and `hull` both told you to set `pushBranches` from the *default*
+  branch. Under gitflow most merges land on `integration`, so that left the
+  team's main integration branch with no push CI and no scan.
+
 ## [0.5.0] - 2026-07-21
 
 Minor: additions only. One caveat worth stating plainly -- ballast's new

@@ -78,7 +78,12 @@ you cannot infer:
 - `pushBranches` — optional, defaults to `["main"]`. Pull requests always
   trigger CI, so `push` is restricted to the long-lived branches; without
   that, every PR raised from a branch in the same repo runs the whole matrix
-  twice. **Check the repo's actual default branch** (`git symbolic-ref
+  twice.
+
+  List **every long-lived branch**, not just the default. Under gitflow that
+  is production *and* integration (`["main", "develop"]`) — most merges land
+  on `develop`, so omitting it means CI never runs on the branch the team
+  integrates into. **Check the repo's actual default branch** (`git symbolic-ref
   --short refs/remotes/origin/HEAD`, or `git branch --show-current` on a
   fresh repo) and set this when it isn't `main` — a repo on `master` that
   takes the default gets no push CI at all, and nothing says so.

@@ -281,3 +281,61 @@ def test_cross_repo_merge_is_evaluated_against_the_named_repo(monkeypatch, tmp_p
     ghio.pr_facts(action.pr_number, repo=action.repo)
     assert any("other/org-repo" in a for a in seen[0])
     ghio.clear_cache()
+
+
+# --- Adopted but not on this branch ----------------------------------------
+#
+# Found by an end-to-end gitflow run, and it made keel a silent no-op on the
+# default adoption path:
+#
+#   1. keel:init scaffolds .keel.json on the current branch -- normally the
+#      default branch, `main`.
+#   2. keel:start-work under gitflow branches from INTEGRATION (`develop`),
+#      per its own step 4.
+#   3. develop does not have .keel.json yet, so load_config returns None and
+#      the guard returned 0 without evaluating anything.
+#
+# The guard was therefore completely off for all feature work -- exactly
+# where it is supposed to be working -- with no error and no warning. An
+# absent config in a repo that has never used keel is genuinely nothing to
+# say; an absent config in a repo that demonstrably HAS adopted keel is a
+# misconfiguration, and it has to be as loud as a malformed one already is.
+
+
+def _repo_that_adopted_keel_elsewhere(tmp_path):
+    """A repo whose history contains .keel.json, on a branch that lacks it --
+    exactly what keel:start-work produces under gitflow."""
+    root, git = init_repo(tmp_path)
+    (root / ".keel.json").write_text('{"topology": "trunk"}\n')
+    git("add", "-A")
+    git("commit", "-qm", "adopt keel")
+    git("checkout", "-q", "-b", "feature/x", "HEAD~1")   # branched before adoption
+    assert not (root / ".keel.json").exists()
+    return root
+
+
+def test_absent_config_on_an_adopting_repo_is_reported(guard, monkeypatch, capsys, tmp_path):
+    root = _repo_that_adopted_keel_elsewhere(tmp_path)
+    _, out = run_guard(guard, monkeypatch, capsys, "git commit -m x", str(root))
+    assert out, "the guard said nothing at all -- this is the silent no-op"
+    payload = json.loads(out)
+    assert "systemMessage" in payload, f"expected a loud notice, got {payload}"
+    assert ".keel.json" in payload["systemMessage"]
+
+
+def test_that_notice_does_not_block(guard, monkeypatch, capsys, tmp_path):
+    """Loud, but not a wall: we cannot know the policy without the config, so
+    blocking on its absence would be inventing one."""
+    root = _repo_that_adopted_keel_elsewhere(tmp_path)
+    _, out = run_guard(guard, monkeypatch, capsys, "git commit -m x", str(root))
+    payload = json.loads(out)
+    assert "hookSpecificOutput" not in payload
+
+
+def test_a_repo_that_never_used_keel_stays_silent(guard, monkeypatch, capsys, tmp_path):
+    """No .keel.json anywhere in history means this simply is not a keel
+    repo. Saying anything here would be noise in every repo that never opted
+    in."""
+    root, _ = init_repo(tmp_path)
+    _, out = run_guard(guard, monkeypatch, capsys, "git commit -m x", str(root))
+    assert out == ""

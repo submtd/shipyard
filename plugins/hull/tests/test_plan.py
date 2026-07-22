@@ -21,7 +21,7 @@ def test_build_plan_yields_one_gitleaks_job():
 
     assert isinstance(plan, ScanPlan)
     assert plan.name == "security"
-    assert plan.permissions == "contents: read"
+    assert plan.permissions == ("contents: read", "pull-requests: read")
     assert len(plan.jobs) == 1
 
     job = plan.jobs[0]

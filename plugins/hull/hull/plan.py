@@ -25,7 +25,7 @@ class ScanPlan:
     """The full scan plan: one job for the configured scanner."""
 
     name: str
-    permissions: str
+    permissions: tuple[str, ...]
     jobs: tuple[Job, ...]
     #: Branches whose pushes trigger the workflow. See config.Config.
     push_branches: tuple[str, ...] = config.DEFAULT_PUSH_BRANCHES
@@ -57,5 +57,7 @@ def _build_job(scanner_id: str) -> Job:
 
 def build_plan(cfg: config.Config) -> ScanPlan:
     job = _build_job(cfg.scanner)
-    return ScanPlan(name=cfg.name, permissions="contents: read", jobs=(job,),
+    return ScanPlan(name=cfg.name,
+                    permissions=scanners.REGISTRY[cfg.scanner].permissions,
+                    jobs=(job,),
                     push_branches=cfg.push_branches)
