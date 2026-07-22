@@ -123,8 +123,9 @@ differently — that is why they are separate rather than one list of strings:
   you never want ignored. The user's way forward is in the message — obtain
   the free license key, add it as a repository or organization Actions secret,
   and re-run `hull:init` telling you the secret's name so it lands in
-  `licenseSecret` — or pick a scanner with no license gate (there is no such
-  scanner registered today, so in practice it is the license).
+  `licenseSecret` — or re-run `hull:init` choosing `"trufflehog"`, which has
+  no license gate at all. That second remedy became real in 0.7.0; before it,
+  the registry had one entry and the blocker's own message named nothing.
 - **`advisories` is non-empty** — these are **not** blockers. Report them
   alongside a successful init, never instead of one. Today's single advisory
   is the fork-PR one described in section 3 under `licenseSecret`.
@@ -156,10 +157,23 @@ Build a signals dict and ask the user only for what you cannot infer:
   the no-clobber stop in section 4 below (exact-case match). Confirm they
   still want that name (e.g. because they've deliberately renamed rigging's
   workflow elsewhere) before using it.
-- `scanner` — optional; defaults to `"gitleaks"` inside `propose_config`,
-  currently the only registered scanner id
-  (`hull.scanners.SCANNER_IDS == ("gitleaks",)`). No need to ask unless the
-  user specifically wants to override it — there's nothing else to pick yet.
+- `scanner` — optional; defaults to `"gitleaks"` inside `propose_config`.
+  Two are registered, and the choice is real:
+  - **`gitleaks`** (default) — the incumbent. Requires a free
+    `GITLEAKS_LICENSE` for **organization-owned** repos, public or private
+    alike; section 2 refuses to scaffold without one. Needs
+    `pull-requests: read` in addition to `contents: read`, because it
+    enumerates a pull request's commits through the API.
+  - **`trufflehog`** — no license, no secret of any kind, and only
+    `contents: read`. AGPL 3.0, and it runs as a CI step against the repo
+    rather than being linked into anything the project ships, so its licence
+    does not reach the consuming codebase. Reports `verified` and `unknown`
+    findings (not `unverified`). This is the answer when section 2 reports
+    the organization blocker and the user does not want to obtain a licence.
+
+  Both are pinned to an immutable SHA and both are byte-identity tested.
+  Ask the user which they want whenever the organization blocker fires;
+  otherwise take the default.
 - `pushBranches` — optional, defaults to `["main"]`. Pull requests always
   trigger the scan, so `push` is restricted to the long-lived branches;
   without that, every PR raised from a branch in the same repo scans twice.
@@ -380,8 +394,8 @@ Point the user at:
 Note what's deliberately **not** here yet — later hull increments, not gaps
 in this one:
 
-- scanners beyond `gitleaks` (`hull.scanners.SCANNER_IDS` has exactly one
-  entry today)
+- scanners beyond `gitleaks` and `trufflehog` (`hull.scanners.SCANNER_IDS`
+  has exactly two entries today)
 - **creating** the license secret itself. hull now renders it through
   (`licenseSecret`, section 3) and refuses to scaffold without it on an
   org-owned repo (section 2), but actually storing the key — `gh secret set
