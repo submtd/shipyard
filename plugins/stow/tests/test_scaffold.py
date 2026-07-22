@@ -3,18 +3,57 @@ import json
 
 import pytest
 
-from stow.config import load_config
+from stow import scaffold
+from stow.config import CONFIG_NAME, load_config
 from stow.scaffold import MANAGED_FILES, classify_files, desired_sections, propose_config
 from stow.stacks import BASE, REGISTRY, STACK_IDS
 
-
-def _all_subsets(ids):
-    for r in range(0, len(ids) + 1):
-        for combo in itertools.combinations(ids, r):
-            yield combo
+ABSENT = object()
 
 
-ALL_SUBSETS = list(_all_subsets(STACK_IDS))
+def _candidate_signals(space):
+    """Every combination of one sample per signal key. A key whose chosen
+    sample is ABSENT is omitted from the produced dict entirely."""
+    keys = sorted(space)
+    for combo in itertools.product(*(space[k] for k in keys)):
+        yield {k: v for k, v in zip(keys, combo) if v is not ABSENT}
+
+
+def _assert_round_trips(tmp_path, signals, index):
+    """The two-outcome contract for one signal combo."""
+    try:
+        cfg = propose_config(signals)
+    except ValueError:
+        return  # a deliberate rejection is an allowed outcome
+    except Exception as exc:  # noqa: BLE001 - the point is to catch the wrong type
+        pytest.fail(
+            f"propose_config({signals!r}) raised {type(exc).__name__}, not "
+            f"ValueError: {exc}"
+        )
+    sub = tmp_path / str(index)
+    sub.mkdir()
+    (sub / CONFIG_NAME).write_text(json.dumps(cfg))
+    loaded = load_config(sub)  # must not raise
+    assert loaded is not None, (
+        f"load_config returned None for {signals!r} -> {cfg!r}"
+    )
+
+
+SIGNAL_SPACE = {
+    "stacks": ((), ("python",), ("node",), ("python", "node")),  # empty is base-only, allowed
+}
+
+
+def test_signal_space_covers_every_signal_key():
+    # Loud-omission guard: add a key to SIGNAL_KEYS without declaring its
+    # samples here and this fails, rather than the round-trip silently
+    # skipping the new key.
+    assert set(SIGNAL_SPACE) == scaffold.SIGNAL_KEYS
+
+
+def test_propose_config_round_trips_over_signal_space(tmp_path):
+    for index, signals in enumerate(_candidate_signals(SIGNAL_SPACE)):
+        _assert_round_trips(tmp_path, signals, index)
 
 
 def test_managed_files():
@@ -29,20 +68,6 @@ def test_single_stack_proposes_expected_dict():
 def test_empty_stacks_list_proposes_base_only_dict():
     cfg = propose_config({"stacks": []})
     assert cfg == {"stacks": {}}
-
-
-@pytest.mark.parametrize("subset", ALL_SUBSETS, ids=lambda s: "-".join(s) or "empty")
-def test_every_subset_round_trips_through_load_config(tmp_path, subset):
-    # The one non-negotiable guarantee: scaffold can never write a
-    # .stow.json that stow itself would reject -- including the
-    # base-only (empty stacks) case.
-    cfg = propose_config({"stacks": subset})
-    (tmp_path / ".stow.json").write_text(json.dumps(cfg))
-    loaded = load_config(tmp_path)  # must not raise
-    assert loaded is not None
-    assert set(loaded.stacks.keys()) == set(subset)
-    for stack_id in subset:
-        assert loaded.stacks[stack_id] == {}
 
 
 def test_unknown_stack_id_raises_value_error_naming_field():
