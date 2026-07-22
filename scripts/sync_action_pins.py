@@ -184,7 +184,7 @@ def regenerate():
 import sys
 sys.path.insert(0, "plugins/rigging"); sys.path.insert(0, "plugins/hull")
 from pathlib import Path
-from rigging.config import Config as RC, load_config as rload
+from rigging.config import Config as RC, StackConfig as RSC, load_config as rload
 from rigging.plan import build_plan as rplan
 from rigging.render import render as rrender
 from hull.config import Config as HC, load_config as hload
@@ -194,9 +194,9 @@ from hull.render import render as hrender
 open(".github/workflows/ci.yml", "w").write(rrender(rplan(rload(Path(".")))))
 open(".github/workflows/security.yml", "w").write(hrender(hplan(hload(Path(".")))))
 for fn, cfg in {
-    "python.yml":   RC(name="ci", stacks={"python": ("3.9", "3.12")}),
-    "node.yml":     RC(name="ci", stacks={"node": ("20",)}),
-    "polyglot.yml": RC(name="ci", stacks={"python": ("3.12",), "node": ("20",)}),
+    "python.yml":   RC(name="ci", stacks={"python": RSC(versions=("3.9", "3.12"))}),
+    "node.yml":     RC(name="ci", stacks={"node": RSC(versions=("20",))}),
+    "polyglot.yml": RC(name="ci", stacks={"python": RSC(versions=("3.12",)), "node": RSC(versions=("20",))}),
 }.items():
     open("plugins/rigging/tests/golden/" + fn, "w").write(rrender(rplan(cfg)))
 open("plugins/hull/tests/golden/security.yml", "w").write(

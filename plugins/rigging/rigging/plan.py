@@ -55,6 +55,7 @@ def _build_job(stack_id: str, versions: tuple[str, ...]) -> Job:
 
 def build_plan(cfg: config.Config) -> CiPlan:
     jobs = tuple(
-        _build_job(stack_id, versions) for stack_id, versions in cfg.stacks.items()
+        _build_job(stack_id, stack_cfg.versions)
+        for stack_id, stack_cfg in cfg.stacks.items()
     )
     return CiPlan(name=cfg.name, jobs=jobs, push_branches=cfg.push_branches)

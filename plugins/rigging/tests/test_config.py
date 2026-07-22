@@ -3,6 +3,7 @@ import json
 import pytest
 
 from rigging.config import Config, ConfigError, load_config
+from rigging.stacks import REGISTRY
 
 
 def write(tmp_path, data):
@@ -30,19 +31,19 @@ def test_non_object_root_raises(tmp_path):
 def test_defaults_fill_in(tmp_path):
     cfg = load_config(write(tmp_path, {"stacks": {"python": {}}}))
     assert cfg.name == "ci"
-    assert cfg.stacks == {"python": ("3.12",)}
+    assert cfg.stacks["python"].versions == ("3.12",)
 
 
 def test_null_stack_value_uses_defaults(tmp_path):
     cfg = load_config(write(tmp_path, {"stacks": {"node": None}}))
-    assert cfg.stacks == {"node": ("20",)}
+    assert cfg.stacks["node"].versions == ("20",)
 
 
 def test_explicit_versions_preserved_as_tuple(tmp_path):
     cfg = load_config(write(tmp_path, {
         "stacks": {"python": {"versions": ["3.10", "3.11"]}}
     }))
-    assert cfg.stacks == {"python": ("3.10", "3.11")}
+    assert cfg.stacks["python"].versions == ("3.10", "3.11")
 
 
 def test_unknown_stack_id_raises_naming_id_and_allowed(tmp_path):
@@ -136,7 +137,7 @@ def test_valid_name_and_version_still_load(tmp_path):
         "name": "ci", "stacks": {"python": {"versions": ["3.9"]}}
     }))
     assert cfg.name == "ci"
-    assert cfg.stacks == {"python": ("3.9",)}
+    assert cfg.stacks["python"].versions == ("3.9",)
 
 
 # --- unknown keys ----------------------------------------------------------
@@ -164,7 +165,7 @@ def test_unknown_per_stack_key_raises_naming_it(tmp_path):
 def test_known_keys_together_still_load(tmp_path):
     cfg = load_config(write(tmp_path, {"name": "ci", "stacks": {"python": {"versions": ["3.12"]}}}))
     assert cfg.name == "ci"
-    assert cfg.stacks["python"] == ("3.12",)
+    assert cfg.stacks["python"].versions == ("3.12",)
 
 
 # --- pushBranches -------------------------------------------------------
@@ -191,3 +192,32 @@ def test_push_branches_rejects_what_it_cannot_safely_render(tmp_path, bad):
     (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
     with pytest.raises(ConfigError):
         load_config(tmp_path)
+
+
+def test_stacks_values_are_stack_configs(tmp_path):
+    """The per-stack container the next three increments hang their keys
+    off. Today it holds only versions."""
+    from rigging.config import StackConfig
+
+    cfg = load_config(write(tmp_path, {"stacks": {"python": {"versions": ["3.12"]}}}))
+    assert cfg.stacks["python"] == StackConfig(versions=("3.12",))
+
+
+def test_stack_config_is_frozen():
+    """FrozenInstanceError specifically, not a bare Exception -- a bare
+    `pytest.raises(Exception)` passes on a typo in the attribute name and so
+    proves nothing about frozenness. Matches keel/tests/test_facts.py."""
+    import dataclasses
+
+    from rigging.config import StackConfig
+
+    sc = StackConfig(versions=("3.12",))
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        sc.versions = ("3.11",)
+
+
+def test_registry_defaults_still_fill_in_absent_versions(tmp_path):
+    """A stack with `{}` still takes its registry default -- the refactor
+    must not have moved where defaults come from."""
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {}}}))
+    assert cfg.stacks["node"].versions == REGISTRY["node"].default_versions

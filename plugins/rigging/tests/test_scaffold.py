@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from rigging.config import load_config
+from rigging.config import StackConfig, load_config
 from rigging.scaffold import CI_FILES, classify_files, propose_config
 from rigging.stacks import REGISTRY, STACK_IDS
 
@@ -34,7 +34,7 @@ def test_every_non_empty_subset_round_trips_through_load_config(tmp_path, subset
     assert loaded.name == "ci"
     assert set(loaded.stacks.keys()) == set(subset)
     for stack_id in subset:
-        assert loaded.stacks[stack_id] == REGISTRY[stack_id].default_versions
+        assert loaded.stacks[stack_id].versions == REGISTRY[stack_id].default_versions
 
 
 def test_explicit_versions_flow_through(tmp_path):
@@ -45,7 +45,7 @@ def test_explicit_versions_flow_through(tmp_path):
     assert cfg["stacks"]["python"] == {"versions": ["3.10", "3.11"]}
     (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
     loaded = load_config(tmp_path)
-    assert loaded.stacks == {"python": ("3.10", "3.11")}
+    assert loaded.stacks == {"python": StackConfig(versions=("3.10", "3.11"))}
 
 
 def test_explicit_versions_only_applied_to_named_stack(tmp_path):
@@ -57,8 +57,8 @@ def test_explicit_versions_only_applied_to_named_stack(tmp_path):
     assert cfg["stacks"]["node"] == {}
     (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
     loaded = load_config(tmp_path)
-    assert loaded.stacks["python"] == ("3.10",)
-    assert loaded.stacks["node"] == REGISTRY["node"].default_versions
+    assert loaded.stacks["python"].versions == ("3.10",)
+    assert loaded.stacks["node"].versions == REGISTRY["node"].default_versions
 
 
 def test_custom_name_flows_through(tmp_path):
@@ -98,7 +98,7 @@ def test_valid_explicit_version_still_round_trips(tmp_path):
     assert cfg["stacks"]["python"] == {"versions": ["3.10"]}
     (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
     loaded = load_config(tmp_path)
-    assert loaded.stacks["python"] == ("3.10",)
+    assert loaded.stacks["python"].versions == ("3.10",)
 
 
 def test_versions_not_a_dict_raises_value_error_naming_field():

@@ -43,9 +43,22 @@ BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 
 @dataclass(frozen=True)
+class StackConfig:
+    """One stack's settings.
+
+    A dataclass rather than a bare versions tuple because the next two
+    increments each add a per-stack key (a custom test command, then service
+    containers). Parallel dicts keyed by stack id would be three chances for
+    the same repo's settings to desync; one container per stack cannot.
+    """
+
+    versions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Config:
     name: str
-    stacks: dict[str, tuple[str, ...]]
+    stacks: dict[str, StackConfig]
     push_branches: tuple[str, ...] = DEFAULT_PUSH_BRANCHES
 
 
@@ -122,7 +135,7 @@ def load_config(root: Path) -> Optional[Config]:
             f"JSON object (got {stacks_raw!r})."
         )
 
-    resolved: dict[str, tuple[str, ...]] = {}
+    resolved: dict[str, StackConfig] = {}
     for stack_id, stack_value in stacks_raw.items():
         if stack_id not in stacks.STACK_IDS:
             raise ConfigError(
@@ -148,6 +161,6 @@ def load_config(root: Path) -> Optional[Config]:
             versions = stacks.REGISTRY[stack_id].default_versions
         else:
             versions = _valid_versions(versions_raw, stack_id)
-        resolved[stack_id] = versions
+        resolved[stack_id] = StackConfig(versions=versions)
 
     return Config(name=name, stacks=resolved, push_branches=push_branches)
