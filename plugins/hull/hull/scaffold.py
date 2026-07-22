@@ -244,7 +244,8 @@ def check_preconditions(signals) -> Preconditions:
             f"organization) as an Actions secret, and set \"licenseSecret\" in "
             f".hull.json to that secret's name (conventionally "
             f"\"{license_env}\") so hull renders it into the scan step -- or "
-            f"choose a scanner with no license gate."
+            f"re-run hull:init choosing the \"trufflehog\" scanner, which "
+            f"needs no license, no secret, and fewer token permissions."
         )
 
     # Non-fatal, but it will look like a hull bug the first time someone sees

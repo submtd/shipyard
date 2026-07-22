@@ -12,7 +12,7 @@ import json
 import pytest
 
 from hull.config import load_config
-from hull.scanners import SCANNER_IDS
+from hull.scanners import REGISTRY, SCANNER_IDS
 from hull.scaffold import (
     SECURITY_FILES,
     check_preconditions,
@@ -228,7 +228,7 @@ def test_blocker_states_cause_exit_code_and_remedy():
     assert "licenseSecret" in blocker
     assert "GITLEAKS_LICENSE" in blocker
     assert "secret" in blocker
-    assert "no license gate" in blocker
+    assert "trufflehog" in blocker
 
 
 def test_organization_with_a_license_secret_is_clear():
@@ -239,17 +239,13 @@ def test_organization_with_a_license_secret_is_clear():
     assert result.blockers == ()
 
 
-def test_organization_with_a_licenseless_scanner_is_clear(monkeypatch):
+def test_organization_with_a_licenseless_scanner_is_clear():
     """The blocker is keyed off the SCANNER's license gate, not off the
-    owner type alone -- a scanner with no gate is fine in an org repo."""
-    import dataclasses
-
-    from hull import scanners
-
-    licenseless = dataclasses.replace(scanners.REGISTRY["gitleaks"],
-                                      license_env=None)
-    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", licenseless)
-    assert check_preconditions({"ownerType": "Organization"}).blockers == ()
+    owner type alone. Previously staged with a patched registry because no
+    licenseless scanner existed; it now exercises the real one."""
+    assert check_preconditions({
+        "ownerType": "Organization", "scanner": "trufflehog",
+    }).blockers == ()
 
 
 # --- the advisory channel --------------------------------------------------
@@ -286,15 +282,13 @@ def test_advisory_is_not_a_blocker():
     assert result.blockers == ()
 
 
-def test_advisory_absent_for_a_scanner_with_no_license_gate(monkeypatch):
-    import dataclasses
-
-    from hull import scanners
-
-    licenseless = dataclasses.replace(scanners.REGISTRY["gitleaks"],
-                                      license_env=None)
-    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", licenseless)
-    assert check_preconditions({"ownerType": "User"}).advisories == ()
+def test_fork_pr_advisory_absent_for_a_scanner_with_no_license_gate():
+    """The fork-PR advisory is about secrets being withheld from fork runs.
+    trufflehog reads no secret, so the caveat does not apply to it."""
+    advisories = check_preconditions({
+        "ownerType": "User", "scanner": "trufflehog",
+    }).advisories
+    assert not any("fork" in a.lower() for a in advisories)
 
 
 def test_preconditions_unpacks_as_blockers_then_advisories():
@@ -381,3 +375,21 @@ def test_propose_config_still_rejects_owner_type():
     it silently."""
     with pytest.raises(ValueError, match="ownerType"):
         propose_config({"ownerType": "Organization"})
+
+
+def test_blocker_names_the_licenseless_scanner_concretely():
+    """Before #27 the message ended "or choose a scanner with no license
+    gate", which named nothing real -- the registry had one entry. The
+    remedy is only actionable if it names the scanner to re-run with."""
+    (blocker,) = check_preconditions({"ownerType": "Organization"}).blockers
+    assert "trufflehog" in blocker
+
+
+def test_every_remedy_the_blocker_offers_actually_exists():
+    """Guards the message against drifting back into naming a scanner that
+    was removed from the registry."""
+    (blocker,) = check_preconditions({"ownerType": "Organization"}).blockers
+    named = [s for s in SCANNER_IDS if s in blocker]
+    assert "trufflehog" in named
+    for scanner_id in named:
+        assert scanner_id in REGISTRY
