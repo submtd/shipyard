@@ -156,3 +156,24 @@ def test_license_plan_is_deterministic():
     cfg = Config(name="security", scanner="gitleaks",
                  license_secret="GITLEAKS_LICENSE")
     assert build_plan(cfg) == build_plan(cfg)
+
+
+def test_scan_step_carries_the_specs_scan_with(monkeypatch):
+    """The registry's scan_with reaches the rendered step rather than being
+    dropped between plan and render. Staged with a patched registry because
+    no scanner declares scan_with yet -- monkeypatch.setitem, matching how
+    every other registry-staging test in this suite is written."""
+    import dataclasses
+
+    from hull import scanners
+
+    withful = dataclasses.replace(scanners.REGISTRY["gitleaks"],
+                                  scan_with={"extra_args": "--flag"})
+    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", withful)
+    job = build_plan(Config(name="security", scanner="gitleaks")).jobs[0]
+    assert job.steps[1].with_ == {"extra_args": "--flag"}
+
+
+def test_scan_step_has_no_with_when_the_spec_declares_none():
+    job = build_plan(Config(name="security", scanner="gitleaks")).jobs[0]
+    assert job.steps[1].with_ is None

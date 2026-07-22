@@ -63,6 +63,15 @@ class ScannerSpec:
     #: reference assembled in plan.py, so no key material can ever end up in
     #: this registry or in a rendered workflow.
     license_env: Optional[str] = None
+    #: The scan step's `with:` mapping, or None when the scanner needs no
+    #: inputs at all. A registry constant, never user input -- which is what
+    #: keeps it outside the injection surface: `with:` values are rendered as
+    #: quoted YAML scalars exactly like `env:` values, but unlike
+    #: `licenseSecret` nothing here is derived from .hull.json, so no
+    #: validation is required for it and none is implied. A scanner needing a
+    #: user-supplied `with:` value would be a genuinely new decision, not an
+    #: extension of this one.
+    scan_with: Optional[dict] = None
 
 
 REGISTRY: dict[str, ScannerSpec] = {

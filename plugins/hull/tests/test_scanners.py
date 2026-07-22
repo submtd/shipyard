@@ -153,3 +153,22 @@ def test_registry_never_stores_a_license_VALUE():
     for spec in REGISTRY.values():
         for value in spec.env.values():
             assert value.startswith("${{") and value.endswith("}}"), value
+
+
+def test_scan_with_defaults_to_none():
+    """A scanner that needs no `with:` block says so by omission, so the
+    renderer emits nothing rather than an empty mapping."""
+    spec = ScannerSpec(
+        id="example",
+        action_ref="owner/action@" + "a" * 40,
+        action_ref_version="v1",
+        checkout_fetch_depth="0",
+        env={},
+    )
+    assert spec.scan_with is None
+
+
+def test_gitleaks_needs_no_scan_with():
+    """gitleaks is configured entirely through env, so adding this field
+    must not have given it a `with:` block."""
+    assert REGISTRY["gitleaks"].scan_with is None
