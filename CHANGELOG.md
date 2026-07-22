@@ -66,6 +66,14 @@ and could stop an installed copy from updating.
   refusal table has been inverted: the same lockfiles that meant "cannot
   drive this" now say which manager to drive.
 
+- **`rigging`'s config scaffolding rejects a malformed package-manager value
+  cleanly.** An unhashable `packageManager` signal (a list where a string was
+  expected) raised a bare `TypeError` from an internal membership test instead
+  of the `ValueError` that names the offending field. It now names the field,
+  like every other bad signal -- a latent gap surfaced by a new suite-wide
+  test that every plugin's `init` can only ever propose a config the same
+  plugin will accept.
+
 ## [0.6.0] - 2026-07-22
 
 Minor rather than patch: two of these fixes change what `init` does in repos
