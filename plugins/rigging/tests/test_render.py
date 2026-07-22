@@ -271,3 +271,21 @@ def test_manager_setup_runs_before_setup_node(tmp_path):
         "stacks": {"node": {"packageManager": "pnpm"}}}))
     out = render(build_plan(cfg))
     assert out.index("pnpm/action-setup") < out.index("actions/setup-node")
+
+
+def test_corepack_enable_lands_between_setup_node_and_install(tmp_path):
+    """Order is the whole point: corepack ships WITH node, so enabling it
+    before setup-node would run against whatever node the image happened to
+    have, and after the install line would be too late."""
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": "yarn-berry"}}}))
+    out = render(build_plan(cfg))
+    assert out.index("actions/setup-node") < out.index("corepack enable")
+    assert out.index("corepack enable") < out.index("yarn install --immutable")
+
+
+def test_other_managers_gained_no_post_setup_step(tmp_path):
+    for manager in ("npm", "yarn1", "pnpm", "bun"):
+        cfg = load_config(write(tmp_path, {
+            "stacks": {"node": {"packageManager": manager}}}))
+        assert "corepack" not in render(build_plan(cfg))

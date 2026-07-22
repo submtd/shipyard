@@ -62,6 +62,12 @@ class PackageManager:
     #: Extra steps this manager needs before `setup-node` runs -- installing
     #: the manager itself. Empty for npm and yarn, which ship with node.
     setup_steps: tuple[Step, ...] = ()
+    #: Extra steps that must run AFTER `setup-node` rather than before it.
+    #: Corepack is the reason this exists: it ships WITH node, so enabling it
+    #: is only possible once node is installed. Kept distinct from
+    #: `setup_steps` rather than merged with an ordering flag, because "which
+    #: side of setup-node" is the only question either field answers.
+    post_setup_steps: tuple[Step, ...] = ()
 
 
 REGISTRY: dict[str, StackSpec] = {
@@ -144,6 +150,13 @@ NODE_PACKAGE_MANAGERS: dict[str, PackageManager] = {
         lockfiles=("yarn.lock",),
         install=("yarn", "install", "--immutable"),
         test=("yarn", "test"),
+        # GitHub's runners ship Yarn 1.22.x, and `--immutable` is a Yarn 2+
+        # flag that classic does not understand -- so without this step the
+        # rendered job fails on its install line every run. Corepack ships
+        # with node and reads the `packageManager` field to pick the yarn
+        # version, which detection has already proved is present: yarn-berry
+        # is only ever selected BECAUSE that field declared yarn@2 or later.
+        post_setup_steps=(Step(run="corepack enable"),),
     ),
     "bun": PackageManager(
         id="bun",

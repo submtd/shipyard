@@ -261,3 +261,22 @@ def test_only_yarn_shares_a_lockfile_between_managers():
     for lockfile, ids in owners.items():
         if len(ids) > 1:
             assert ids == {"yarn1", "yarn-berry"}, (lockfile, ids)
+
+
+def test_yarn_berry_enables_corepack_after_node_setup():
+    """`--immutable` is a Yarn 2+ flag and the runners ship Yarn 1.22.x, so
+    without corepack the install line fails every run."""
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
+    berry = NODE_PACKAGE_MANAGERS["yarn-berry"]
+    assert berry.post_setup_steps == (Step(run="corepack enable"),)
+
+
+def test_only_yarn_berry_needs_a_post_setup_step():
+    """npm and yarn classic ship with the runner; pnpm and bun install their
+    own binary in a pre-setup action. Berry is the only one that needs node
+    to exist first."""
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
+    needing = {i for i, m in NODE_PACKAGE_MANAGERS.items() if m.post_setup_steps}
+    assert needing == {"yarn-berry"}

@@ -53,17 +53,17 @@ def render_argv(argv: tuple[str, ...]) -> str:
 def _manager_steps(stack_id: str, manager_id: str):
     """The setup and run steps contributed by a stack's package manager.
 
-    Returns `((), ())` for a stack that has no manager concept -- today every
-    stack but node.
+    Returns `((), (), ())` for a stack that has no manager concept -- today
+    every stack but node.
     """
     if stack_id != "node":
-        return (), ()
+        return (), (), ()
     manager = stacks.NODE_PACKAGE_MANAGERS[manager_id]
     runs = (
         stacks.Step(run=render_argv(manager.install)),
         stacks.Step(run=render_argv(manager.test)),
     )
-    return manager.setup_steps, runs
+    return manager.setup_steps, manager.post_setup_steps, runs
 
 
 def _build_job(stack_id: str, versions: tuple[str, ...],
@@ -78,13 +78,16 @@ def _build_job(stack_id: str, versions: tuple[str, ...],
     # documented order. Nothing here depends on it today (no dependency
     # caching is configured), but the documented order is the one that stays
     # correct if caching is ever added.
-    manager_setup, manager_runs = _manager_steps(stack_id, manager_id)
+    manager_setup, manager_post_setup, manager_runs = _manager_steps(stack_id, manager_id)
     return Job(
         id=spec.id,
         runs_on="ubuntu-latest",
         matrix_var=spec.matrix_var,
         versions=versions,
-        steps=(CHECKOUT_STEP, *manager_setup, setup_step, *spec.steps, *manager_runs),
+        steps=(
+            CHECKOUT_STEP, *manager_setup, setup_step,
+            *manager_post_setup, *spec.steps, *manager_runs,
+        ),
     )
 
 
