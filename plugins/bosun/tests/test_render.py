@@ -163,3 +163,43 @@ def test_updates_header_present():
     cfg = Config(ecosystems={"githubActions": EcosystemConfig(interval="weekly")})
     out = render(build_plan(cfg))
     assert "updates:\n" in out
+
+
+# --- targetBranch -----------------------------------------------------------
+
+
+def test_target_branch_plan_matches_golden_byte_for_byte(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "ecosystems": {"githubActions": {}, "node": {}},
+        "targetBranch": "develop",
+    }))
+    assert render(build_plan(cfg)) == read_golden("target_branch.yml")
+
+
+def test_absent_target_branch_omits_the_key_entirely(tmp_path):
+    # Not an empty or null value: Dependabot reads an ABSENT target-branch
+    # as "the repository default branch", and no literal means the same
+    # thing. This is also what keeps every config written before the key
+    # existed rendering byte-identically.
+    cfg = load_config(write(tmp_path, {"ecosystems": {"githubActions": {}}}))
+    rendered = render(build_plan(cfg))
+    assert "target-branch" not in rendered
+    assert rendered == read_golden("shipyard.yml")
+
+
+def test_target_branch_is_rendered_as_a_quoted_scalar(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "ecosystems": {"githubActions": {}},
+        "targetBranch": "release/1.2.x",
+    }))
+    assert '    target-branch: "release/1.2.x"' in render(build_plan(cfg))
+
+
+def test_target_branch_output_stays_declarative_only(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "ecosystems": {"githubActions": {}, "python": {}},
+        "targetBranch": "develop",
+    }))
+    rendered = render(build_plan(cfg))
+    assert "${{" not in rendered
+    assert "run:" not in rendered

@@ -5,7 +5,8 @@ import pytest
 
 from bosun.config import load_config
 from bosun.ecosystems import ECOSYSTEM_IDS, INTERVALS
-from bosun.scaffold import DEPENDABOT_FILES, classify_files, propose_config
+from bosun.scaffold import (DEPENDABOT_FILES, classify_files,
+                            keel_integration_branch, propose_config)
 
 # Ecosystem ids that detect_ecosystems can ever surface (always-off only --
 # githubActions is never detected, it's the always-on one propose_config
@@ -223,3 +224,86 @@ def test_a_near_miss_of_a_real_signal_is_rejected():
     and silently isn't."""
     with pytest.raises(ValueError):
         propose_config(dict({'ecosystems': ['python']}, stack=["python"]))
+
+
+# --- targetBranch and keel_integration_branch -------------------------------
+
+
+def test_target_branch_signal_is_emitted_and_round_trips(tmp_path):
+    cfg = propose_config({"ecosystems": ["node"], "targetBranch": "develop"})
+    assert cfg["targetBranch"] == "develop"
+    (tmp_path / ".bosun.json").write_text(json.dumps(cfg))
+    assert load_config(tmp_path).target_branch == "develop"
+
+
+def test_absent_target_branch_signal_omits_the_key():
+    # Omitted rather than written out as the current default, so a repo
+    # scaffolded today does not have one topology's answer frozen into it.
+    assert "targetBranch" not in propose_config({"ecosystems": []})
+
+
+@pytest.mark.parametrize("bad", ["", "-develop", "a b", "x\ny", 5, ["develop"]])
+def test_malformed_target_branch_signal_raises_before_anything_is_returned(bad):
+    with pytest.raises(ValueError) as e:
+        propose_config({"ecosystems": [], "targetBranch": bad})
+    assert "targetBranch" in str(e.value)
+
+
+def test_unknown_signal_key_still_rejected():
+    with pytest.raises(ValueError):
+        propose_config({"ecosystems": [], "target_branch": "develop"})
+
+
+def test_keel_integration_branch_absent_file_is_none(tmp_path):
+    assert keel_integration_branch(tmp_path) is None
+
+
+def test_keel_integration_branch_reads_gitflow_integration(tmp_path):
+    (tmp_path / ".keel.json").write_text(json.dumps({
+        "topology": "gitflow",
+        "branches": {"production": "main", "integration": "develop"},
+    }))
+    assert keel_integration_branch(tmp_path) == "develop"
+
+
+def test_keel_integration_branch_defaults_to_develop_under_gitflow(tmp_path):
+    # keel's own default when branches.integration is absent, and keel's own
+    # default topology when the key is absent -- both mirrored here.
+    (tmp_path / ".keel.json").write_text(json.dumps({"branches": {}}))
+    assert keel_integration_branch(tmp_path) == "develop"
+
+
+def test_keel_integration_branch_is_none_under_trunk(tmp_path):
+    # Correct, not a gap: under trunk the integration branch IS the
+    # repository default branch, so the right output has no target-branch.
+    (tmp_path / ".keel.json").write_text(json.dumps({
+        "topology": "trunk", "branches": {"production": "main"},
+    }))
+    assert keel_integration_branch(tmp_path) is None
+
+
+@pytest.mark.parametrize("body", [
+    "{not json",
+    json.dumps(["not", "an", "object"]),
+    json.dumps({"branches": {"integration": 5}}),
+    json.dumps({"branches": {"integration": "bad branch"}}),
+    json.dumps({"branches": "not-an-object"}),
+])
+def test_keel_integration_branch_degrades_quietly_on_unusable_keel_json(tmp_path, body):
+    # A convenience, never a validator: keel's own loader is the authority
+    # on whether .keel.json is sound. Returning None here means "no answer
+    # from keel", and the caller falls back to asking the user.
+    (tmp_path / ".keel.json").write_text(body)
+    assert keel_integration_branch(tmp_path) is None
+
+
+def test_keel_integration_branch_result_is_accepted_as_a_signal(tmp_path):
+    # The whole point of the helper: whatever it returns must be directly
+    # usable as propose_config's targetBranch signal.
+    (tmp_path / ".keel.json").write_text(json.dumps({
+        "topology": "gitflow", "branches": {"integration": "develop"},
+    }))
+    branch = keel_integration_branch(tmp_path)
+    cfg = propose_config({"ecosystems": [], "targetBranch": branch})
+    (tmp_path / ".bosun.json").write_text(json.dumps(cfg))
+    assert load_config(tmp_path).target_branch == "develop"

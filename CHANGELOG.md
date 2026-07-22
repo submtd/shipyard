@@ -18,6 +18,94 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+Three adoption blockers reported from a real migration onto the suite
+(issue #24): an org-owned pnpm + turbo TypeScript monorepo on gitflow, taking
+fork contributions -- four configurations shipyard's own dogfooding cannot
+exercise, because shipyard is a personal-account, npm-free, trunk repo.
+
+All three were the same shape, and it is worth naming: a renderer with no
+slot for something the rendered artifact genuinely required, and no escape
+hatch, so the failure could not be fixed from the consuming repo. Generated
+output being authoritative and byte-identity-tested is this suite's strongest
+property; the flip side is that when a renderer cannot express what a repo
+needs, the only honest move is to say so at scaffold time. **An `init` that
+refuses to scaffold is worth more than one that scaffolds something broken.**
+
+Two caveats worth stating rather than burying:
+
+- `hull:init` now **refuses to scaffold** in an organization-owned repo with
+  no license secret configured. That is a setup which used to "work" -- it
+  produced files -- and now stops with a diagnosis. It produced a workflow
+  that could never go green, so the refusal is the point, but it is a
+  behaviour change an existing user can hit on a re-run.
+- `rigging:init` likewise refuses when it finds a JavaScript toolchain it
+  cannot drive. A pnpm/yarn/bun repo that previously got a workflow now gets
+  none -- correctly, since the one it got died on `npm ci` every run.
+
+### Added
+
+- **`bosun` can target a branch other than the repository default.**
+  `.bosun.json` gained an optional top-level `targetBranch`, rendered as
+  `target-branch` on every update entry. Absent still means "use the
+  repository default branch", so output for every existing config is
+  byte-identical. `bosun:init` reads the answer out of `.keel.json` rather
+  than asking cold, via the new `scaffold.keel_integration_branch` -- which
+  returns None under trunk, because there the integration branch *is* the
+  default branch and omitting the key is already right.
+- **`hull` can pass a scanner license through to the action.** `.hull.json`
+  gained an optional `licenseSecret` -- the NAME of an Actions secret, never
+  key material -- rendered as `GITLEAKS_LICENSE: "${{ secrets.<NAME> }}"` on
+  the scan step. Validated against a deliberately strict
+  `^[A-Za-z_][A-Za-z0-9_]*$`: it is the one config string that lands inside
+  an Actions expression rather than merely inside a quoted scalar, so a value
+  that passes cannot close that expression, open another, or break out of the
+  scalar. Which env var a license goes in is a property of the scanner, so it
+  lives in the registry (`ScannerSpec.license_env`); setting `licenseSecret`
+  for a scanner that has no license gate is a `ConfigError`, not a silently
+  discarded setting.
+
+### Fixed
+
+- **`bosun` opened dependency PRs against production in every gitflow repo.**
+  With no `target-branch` rendered, Dependabot falls back to the repository
+  default branch -- which under gitflow is `main`. So bosun's output bypassed
+  `develop`, bypassed the changelog gate `keel` enforces, and left integration
+  behind until someone back-merged. Two plugins in one suite contradicting
+  each other, on the topology `keel` defaults to.
+- **`hull` scaffolded a workflow that could not pass in an org-owned repo.**
+  The pinned `gitleaks-action` v3 exits 1 before scanning anything when the
+  owner is a GitHub Organization and `GITLEAKS_LICENSE` is unset -- public or
+  private alike -- and `.hull.json` had nowhere to put one. `hull:init` now
+  looks up the owner type and refuses, showing the cause and both remedies,
+  before anything is written. A failed lookup (no remote, offline,
+  unauthenticated `gh`) is explicitly *not* a blocker: refusing because a
+  network call failed would break hull on brand-new repos, which is where it
+  matters most.
+- **`rigging` handed every pnpm, yarn, and bun repo an `npm ci` workflow.**
+  `detect_files=("package.json",)` matches *every* JavaScript repo, and the
+  node stack's steps are `npm ci`/`npm test`, which fail outright without a
+  `package-lock.json`. `rigging:init` now refuses to scaffold a stack it
+  cannot drive, naming the marker it found and the package manager it
+  implies. Detection is deliberately unchanged -- node is still reported, and
+  the reason travels beside it, because silently dropping the stack is the
+  same class of bug wearing a quieter coat. A repo where python is also
+  detected still gets its python workflow, with the omission explained.
+
+### Documentation
+
+- `hull:init` now states the fork-PR limitation it always had: GitHub
+  withholds repository and organization secrets from `pull_request` runs
+  whose head is a fork, by design, so `GITLEAKS_LICENSE` arrives empty and
+  the scan fails on fork PRs even once a license is configured. Reported as a
+  non-blocking advisory, on a separate return channel from the blockers, so
+  it is never confused for a reason to stop. It matters because `keel`
+  supports `contributions` of `"fork"` and `"both"`.
+- `rigging:init` and `bosun:init` both had "not here yet" lists that were
+  quietly out of date about what they could express. Both now name the real
+  gaps: for rigging, pnpm/yarn/bun steps, custom test commands, and service
+  containers -- the last of which is why a repo needing a live Postgres still
+  cannot use rigging today.
+
 ## [0.5.1] - 2026-07-21
 
 Patch: every change is a fix to behaviour that was already meant to work.

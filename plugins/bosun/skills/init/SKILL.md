@@ -83,6 +83,48 @@ Build a signals dict from what you detected:
   so `config.load_config` fills in the registry default (`"weekly"`) later.
   Ask if the user wants something other than weekly for a given ecosystem —
   including `githubActions` itself, which `intervals` can also target.
+- `targetBranch` — optional, the branch Dependabot opens its update PRs
+  against. Determine it from `.keel.json` rather than asking cold; see just
+  below.
+
+### Determining `targetBranch`
+
+Omitting this key is not a neutral choice. Dependabot falls back to the
+**repository default branch** when `target-branch` is absent, and in a
+gitflow repo that branch is `main` — production. A bosun scaffold with no
+`targetBranch` in such a repo opens weekly dependency PRs straight at
+production, bypassing `develop`, bypassing the changelog convention keel
+enforces, and leaving integration behind until somebody back-merges. Two
+plugins in the same suite would be contradicting each other.
+
+bosun can usually answer this without asking, because keel already wrote the
+answer down. Read it:
+
+    python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}'); from bosun.scaffold import keel_integration_branch; from pathlib import Path; print(keel_integration_branch(Path('.')))"
+
+- **Prints a branch name** (e.g. `develop`) — the repo is keel-managed under
+  a gitflow topology. Use it as the `targetBranch` signal. Tell the user
+  where the value came from and confirm it, rather than presenting it as
+  something you chose.
+- **Prints `None`** — this means one of three quite different things, and
+  you should say which: there is no `.keel.json` (the repo is not
+  keel-managed); the topology is `trunk`, in which case the integration
+  branch **is** the repository default branch and omitting `target-branch`
+  is exactly right; or `.keel.json` is present but unusable. That helper is
+  a convenience, never a validator — it degrades quietly on a malformed file
+  precisely so it can never become a second, drifting opinion about whether
+  keel's config is sound. If you need to know which case you are in, load it
+  through keel's own loader.
+
+  In the not-keel-managed and unusable cases, ask the user whether dependency
+  PRs should target something other than the repository default branch, and
+  pass what they say. In the trunk case, do not ask — pass nothing.
+
+`propose_config` validates the value against the same branch-name pattern
+hull and rigging use (`^[A-Za-z0-9][A-Za-z0-9._/-]*$`) and raises
+`ValueError` on anything else. That pattern is deliberately narrower than
+git's own rules: the value is rendered into YAML, so a name that would need
+quoting or escaping is a name bosun refuses outright.
 
 Call `bosun.scaffold.propose_config(signals)` to get the `.bosun.json`
 dict, e.g.:
@@ -97,14 +139,17 @@ dict, e.g.:
 
 This always emits `githubActions` plus every id you listed — for
 `{'ecosystems': ['python']}` that's
-`{"ecosystems": {"githubActions": {}, "python": {}}}`. Show the result to
+`{"ecosystems": {"githubActions": {}, "python": {}}}`, with a top-level
+`"targetBranch"` alongside it when (and only when) you passed that signal.
+Show the result to
 the user in full and confirm. If they want changes (add/drop an ecosystem,
 set an interval), adjust the signals dict and re-show — don't write
 anything until they've approved what's on screen.
 
 `propose_config` raises `ValueError` — naming the offending field — on an
-unknown ecosystem id in `signals['ecosystems']` or an interval outside
-`("daily", "weekly", "monthly")` in `signals['intervals']`. Surface that
+unknown ecosystem id in `signals['ecosystems']`, an interval outside
+`("daily", "weekly", "monthly")` in `signals['intervals']`, or a
+`signals['targetBranch']` that is not a legal branch name. Surface that
 message to the user directly rather than reinterpreting it; it already
 names the field and the bad value.
 
@@ -209,10 +254,12 @@ Prove what's on disk is sound:
   proof — unlike rigging/hull there is no free-text render input for an
   attacker to smuggle an expression through in the first place: `.bosun.json`
   only ever contributes an `interval` (enum-validated against
-  `("daily", "weekly", "monthly")`) and a set of ecosystem ids (whitelisted
-  against the registry), and `directory` is fixed at `"/"` by `plan.py`,
-  never read from config. The assertion documents that invariant; it
-  doesn't establish it.
+  `("daily", "weekly", "monthly")`), a set of ecosystem ids (whitelisted
+  against the registry), and a `targetBranch` (matched against
+  `^[A-Za-z0-9][A-Za-z0-9._/-]*$`, which admits no whitespace, no newline,
+  no quote, and no `$` — so it cannot open an expression or start a new YAML
+  key), and `directory` is fixed at `"/"` by `plan.py`, never read from
+  config. The assertion documents that invariant; it doesn't establish it.
 
 Report: what you created, what you skipped (and why), the confirmed config,
 and the verification result.
@@ -256,8 +303,8 @@ increments, not gaps in this one:
   the repo root — no per-ecosystem manifest path, no monorepo support)
 - reviewers, assignees, labels, commit-message prefixes, `open-pull-requests-limit`,
   or grouped updates — today's renderer only emits `package-ecosystem`,
-  `directory`, and `schedule.interval`
-- configurable triggers or a non-default `target-branch`
+  `directory`, `target-branch` (when configured), and `schedule.interval`
+- configurable triggers
 - dependency vulnerability scanning/alerts (see the settled boundary above)
 - an interactive edit path for an existing `.bosun.json` (increment 1's only
   ways to change it are hand-editing the file and re-running `bosun:init` to

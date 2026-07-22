@@ -3,9 +3,11 @@ gathers signals and does I/O; this module maps data to data and reads the
 filesystem."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from bosun import ecosystems
+from bosun.config import BRANCH_RE
 
 
 #: Every signal `propose_config` understands. An unrecognised key is an error
@@ -14,7 +16,7 @@ from bosun import ecosystems
 #: takes a default instead. That is the same reasoning the config loaders
 #: already apply to unknown FILE keys -- and it matters more here, because a
 #: dropped signal leaves nothing on disk to inspect afterwards.
-SIGNAL_KEYS = frozenset({"ecosystems", "intervals"})
+SIGNAL_KEYS = frozenset({"ecosystems", "intervals", "targetBranch"})
 
 
 def _reject_unknown_signals(signals):
@@ -88,6 +90,16 @@ def propose_config(signals):
                 f"of {ecosystems.INTERVALS} (got {interval!r})."
             )
 
+    target_branch = signals.get("targetBranch")
+    if target_branch is not None and (
+        not isinstance(target_branch, str)
+        or not BRANCH_RE.fullmatch(target_branch)
+    ):
+        raise ValueError(
+            f"signals['targetBranch'] must be a string matching "
+            f"{BRANCH_RE.pattern} (got {target_branch!r})."
+        )
+
     detected = set(ecosystem_ids)
     ecosystems_out = {}
     for ecosystem_id, spec in ecosystems.REGISTRY.items():
@@ -99,7 +111,66 @@ def propose_config(signals):
         else:
             ecosystems_out[ecosystem_id] = {}
 
-    return {"ecosystems": ecosystems_out}
+    out = {"ecosystems": ecosystems_out}
+    # Omitted when unset so config.load_config's "use the repository default
+    # branch" behaviour stays the written-down default, rather than being
+    # frozen into every scaffolded repo as an explicit branch name.
+    if target_branch is not None:
+        out["targetBranch"] = target_branch
+    return out
+
+
+def keel_integration_branch(root):
+    """Return the integration branch `.keel.json` declares, or None.
+
+    bosun and keel ship in one suite and are routinely adopted together, so
+    bosun can usually answer its own hardest question without asking: under
+    a gitflow topology keel already knows that `develop`, not the repository
+    default branch, is where changes are supposed to land. Rendering a
+    `dependabot.yml` with no `target-branch` in such a repo opens weekly
+    dependency PRs straight against production, bypassing integration and
+    the changelog gate keel enforces -- two plugins in the same suite
+    contradicting each other.
+
+    Deliberately reads and interprets the file here rather than importing
+    keel: each plugin in this suite is self-contained and installable on its
+    own, so a hard dependency on keel's package would be a new and much
+    larger coupling than reading a documented config file. The trade-off is
+    that this must degrade quietly -- an absent, unreadable, malformed, or
+    keel-invalid `.keel.json` returns None, meaning "no answer from keel",
+    and the caller falls back to asking the user. It is a convenience, never
+    a validator: keel's own loader is the authority on whether that file is
+    sound, and duplicating its diagnostics here would let the two drift.
+
+    Returns None under a `trunk` topology too, and that is the correct
+    answer rather than a gap: under trunk the integration branch IS the
+    repository default branch, so the right rendered output is one with no
+    `target-branch` key at all.
+    """
+    path = Path(root) / ".keel.json"
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    # keel's own default when the key is absent; mirrored rather than
+    # imported for the self-containment reason above.
+    if raw.get("topology", "gitflow") == "trunk":
+        return None
+    branches = raw.get("branches", {})
+    # An absent `branches` is normal -- keel supplies its own defaults for
+    # everything under it. A `branches` of the wrong TYPE is a file keel
+    # itself would reject, and guessing a default off a file we already know
+    # is broken is worse than admitting we have no answer.
+    if not isinstance(branches, dict):
+        return None
+    branch = branches.get("integration", "develop")
+    if not isinstance(branch, str) or not BRANCH_RE.fullmatch(branch):
+        return None
+    return branch
 
 
 def DEPENDABOT_FILES():

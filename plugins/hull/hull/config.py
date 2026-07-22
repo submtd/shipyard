@@ -15,10 +15,25 @@ CONFIG_NAME = ".hull.json"
 #: ignore: silently dropping it means the user believes they configured
 #: something they didn't, and the resulting behaviour change surfaces far
 #: from its cause.
-TOP_LEVEL_KEYS = frozenset({"name", "scanner", "pushBranches"})
+TOP_LEVEL_KEYS = frozenset({"name", "scanner", "pushBranches", "licenseSecret"})
 
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+#: A GitHub Actions secret NAME -- never a secret value. It is interpolated
+#: into `${{ secrets.<NAME> }}` in the rendered workflow, which is the one
+#: place in hull where a config string lands inside an Actions expression
+#: rather than merely inside a quoted YAML scalar. So this pattern is
+#: deliberately stricter than anything else in this file: leading letter or
+#: underscore, then letters/digits/underscores, nothing else. No dot, no
+#: dash, no space, no brace, no quote -- which means a value that passes here
+#: cannot close the expression it sits in, cannot open a second one, and
+#: cannot break out of the double-quoted scalar the renderer wraps it in.
+#: GitHub's own secret names are a subset of this (they are upper-case
+#: alphanumeric-plus-underscore and may not start with a digit), so the
+#: strictness costs a user nothing they could actually have created.
+SECRET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 #: Branches whose pushes trigger the scan. Pull requests always trigger it,
@@ -44,6 +59,14 @@ class Config:
     name: str
     scanner: str
     push_branches: tuple[str, ...] = DEFAULT_PUSH_BRANCHES
+    #: Name of the repo/org secret holding the scanner's license key, or None
+    #: when there is none to pass. Optional and defaulting to None so every
+    #: config written before this key existed keeps rendering byte-identical
+    #: output; when it IS set, plan.py adds `<scanner license_env>:
+    #: "${{ secrets.<licenseSecret> }}"` to the scan step's env alongside
+    #: GITHUB_TOKEN. hull never sees or stores the key itself -- only the
+    #: name of the secret GitHub should hand the job at run time.
+    license_secret: Optional[str] = None
 
 
 def _valid_name(value, field="name"):
@@ -83,6 +106,39 @@ def _valid_scanner(value):
     return value
 
 
+def _valid_license_secret(value, scanner):
+    """Validate an optional `licenseSecret` against SECRET_NAME_RE and the
+    chosen scanner.
+
+    Two separate failures are caught here, and they are worth distinguishing:
+
+    1. A name that is not a plausible GitHub Actions secret identifier. This
+       is the injection guard -- the value is interpolated into
+       `${{ secrets.<NAME> }}`, so anything containing a brace, a quote or
+       whitespace could restructure the expression (or the YAML around it)
+       rather than name a secret. Rejecting at load time means the renderer
+       is never handed such a string in the first place.
+    2. A name set for a scanner that has no license gate at all
+       (`ScannerSpec.license_env is None`). Accepting it would leave the user
+       believing they had configured something that is silently discarded --
+       the same failure mode the unknown-key check above exists to prevent,
+       so it gets the same treatment: a loud error naming the field.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str) or not SECRET_NAME_RE.fullmatch(value):
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'licenseSecret' must be a GitHub Actions secret "
+            f"name matching {SECRET_NAME_RE.pattern} (got {value!r})."
+        )
+    if scanners.REGISTRY[scanner].license_env is None:
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'licenseSecret' is set but scanner {scanner!r} "
+            f"has no license key to pass it to; remove 'licenseSecret'."
+        )
+    return value
+
+
 def load_config(root: Path) -> Optional[Config]:
     path = Path(root) / CONFIG_NAME
     if not path.is_file():
@@ -104,5 +160,9 @@ def load_config(root: Path) -> Optional[Config]:
     name = _valid_name(raw.get("name", "security"))
     scanner = _valid_scanner(raw.get("scanner", "gitleaks"))
     push_branches = _valid_push_branches(raw.get("pushBranches"))
+    # Validated after `scanner`, and given it, because whether the key is
+    # meaningful at all depends on which scanner was chosen.
+    license_secret = _valid_license_secret(raw.get("licenseSecret"), scanner)
 
-    return Config(name=name, scanner=scanner, push_branches=push_branches)
+    return Config(name=name, scanner=scanner, push_branches=push_branches,
+                  license_secret=license_secret)

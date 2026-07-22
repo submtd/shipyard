@@ -103,3 +103,32 @@ def test_update_is_frozen_dataclass():
     update = build_plan(cfg).updates[0]
     with pytest.raises(Exception):
         update.interval = "daily"
+
+
+# --- targetBranch -----------------------------------------------------------
+
+
+def test_target_branch_is_none_on_every_update_when_unconfigured():
+    cfg = Config(ecosystems={"githubActions": EcosystemConfig(interval="weekly")})
+    assert build_plan(cfg).updates[0].target_branch is None
+
+
+def test_configured_target_branch_reaches_every_update():
+    # One repo-wide value in config becomes one value per update entry --
+    # Dependabot's schema puts target-branch at the entry level, so a plan
+    # that mirrors the file it will become has to carry it there too.
+    cfg = Config(
+        ecosystems={
+            "githubActions": EcosystemConfig(interval="weekly"),
+            "node": EcosystemConfig(interval="daily"),
+        },
+        target_branch="develop",
+    )
+    plan = build_plan(cfg)
+
+    assert plan.updates == (
+        Update(package_ecosystem="github-actions", directory="/",
+               interval="weekly", target_branch="develop"),
+        Update(package_ecosystem="npm", directory="/",
+               interval="daily", target_branch="develop"),
+    )

@@ -13,7 +13,12 @@ import pytest
 
 from hull.config import load_config
 from hull.scanners import SCANNER_IDS
-from hull.scaffold import SECURITY_FILES, classify_files, propose_config
+from hull.scaffold import (
+    SECURITY_FILES,
+    check_preconditions,
+    classify_files,
+    propose_config,
+)
 
 
 def test_propose_config_defaults():
@@ -161,3 +166,218 @@ def test_a_near_miss_of_a_real_signal_is_rejected():
     and silently isn't."""
     with pytest.raises(ValueError):
         propose_config(dict({}, stack=["python"]))
+
+
+# --- licenseSecret signal --------------------------------------------------
+
+
+def test_propose_config_omits_license_secret_when_not_signalled():
+    assert "licenseSecret" not in propose_config({})
+
+
+def test_propose_config_carries_license_secret_through(tmp_path):
+    cfg = propose_config({"licenseSecret": "GITLEAKS_LICENSE"})
+    assert cfg["licenseSecret"] == "GITLEAKS_LICENSE"
+    (tmp_path / ".hull.json").write_text(json.dumps(cfg))
+    assert load_config(tmp_path).license_secret == "GITLEAKS_LICENSE"
+
+
+@pytest.mark.parametrize("bad", [
+    "${{ secrets.X }}", "X }} ${{ y", "MY-LICENSE", "MY.LICENSE",
+    "1LICENSE", "", 5, ["GITLEAKS_LICENSE"],
+])
+def test_propose_config_rejects_unrenderable_license_secret(bad):
+    with pytest.raises(ValueError, match="licenseSecret"):
+        propose_config({"licenseSecret": bad})
+
+
+# --- check_preconditions ---------------------------------------------------
+#
+# Issue #24: hull:init used to write a workflow that CANNOT pass in an
+# org-owned repo, with no warning. The guard is pure -- the skill runs
+# `gh repo view --json owner -q .owner.type` and passes the answer in -- so
+# these tests exercise the whole decision without any I/O at all.
+
+
+def test_no_blockers_for_a_user_owned_repo():
+    result = check_preconditions({"ownerType": "User"})
+    assert result.blockers == ()
+
+
+def test_no_blockers_when_owner_type_is_unknown():
+    """A failed lookup (no remote yet, gh unauthenticated, offline) must not
+    make hull unusable on a brand-new repo -- which is where it is most
+    useful. The advisory channel still carries the caveat."""
+    assert check_preconditions({}).blockers == ()
+    assert check_preconditions({"ownerType": None}).blockers == ()
+
+
+def test_organization_without_a_license_secret_is_blocked():
+    result = check_preconditions({"ownerType": "Organization"})
+    assert len(result.blockers) == 1
+
+
+def test_blocker_states_cause_exit_code_and_remedy():
+    """The message has to survive being pasted into an issue by someone who
+    has never read hull's source: cause, the fact that the action exits 1,
+    and both remedies."""
+    (blocker,) = check_preconditions({"ownerType": "Organization"}).blockers
+    assert "Organization" in blocker
+    assert "license" in blocker
+    assert "exits 1" in blocker
+    assert "licenseSecret" in blocker
+    assert "GITLEAKS_LICENSE" in blocker
+    assert "secret" in blocker
+    assert "no license gate" in blocker
+
+
+def test_organization_with_a_license_secret_is_clear():
+    result = check_preconditions({
+        "ownerType": "Organization",
+        "licenseSecret": "GITLEAKS_LICENSE",
+    })
+    assert result.blockers == ()
+
+
+def test_organization_with_a_licenseless_scanner_is_clear(monkeypatch):
+    """The blocker is keyed off the SCANNER's license gate, not off the
+    owner type alone -- a scanner with no gate is fine in an org repo."""
+    import dataclasses
+
+    from hull import scanners
+
+    licenseless = dataclasses.replace(scanners.REGISTRY["gitleaks"],
+                                      license_env=None)
+    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", licenseless)
+    assert check_preconditions({"ownerType": "Organization"}).blockers == ()
+
+
+# --- the advisory channel --------------------------------------------------
+#
+# Deliberately a SEPARATE return channel from blockers: an advisory is
+# reported alongside a successful init, a blocker instead of one. Collapsing
+# them into one list of strings would leave the skill guessing which is which.
+
+
+def test_fork_pr_secret_advisory_is_returned_for_a_license_gated_scanner():
+    (advisory,) = check_preconditions({"ownerType": "User"}).advisories
+    assert "fork" in advisory.lower()
+    assert "secret" in advisory
+    assert "GITLEAKS_LICENSE" in advisory
+
+
+def test_fork_pr_advisory_is_still_returned_once_a_license_is_configured():
+    """This is the point of it: a configured license fixes the org blocker
+    and does nothing for fork PRs, because GitHub withholds secrets there by
+    design."""
+    result = check_preconditions({
+        "ownerType": "Organization",
+        "licenseSecret": "GITLEAKS_LICENSE",
+    })
+    assert result.blockers == ()
+    assert len(result.advisories) == 1
+
+
+def test_advisory_is_not_a_blocker():
+    """The distinction is load-bearing: an advisory must never appear in the
+    channel the skill refuses to scaffold on."""
+    result = check_preconditions({"ownerType": "User"})
+    assert result.advisories
+    assert result.blockers == ()
+
+
+def test_advisory_absent_for_a_scanner_with_no_license_gate(monkeypatch):
+    import dataclasses
+
+    from hull import scanners
+
+    licenseless = dataclasses.replace(scanners.REGISTRY["gitleaks"],
+                                      license_env=None)
+    monkeypatch.setitem(scanners.REGISTRY, "gitleaks", licenseless)
+    assert check_preconditions({"ownerType": "User"}).advisories == ()
+
+
+def test_preconditions_unpacks_as_blockers_then_advisories():
+    blockers, advisories = check_preconditions({"ownerType": "Organization"})
+    assert blockers and advisories
+
+
+# --- check_preconditions rejects unknown signals ---------------------------
+
+
+def test_check_preconditions_rejects_an_unknown_signal_key():
+    with pytest.raises(ValueError) as excinfo:
+        check_preconditions({"ownerType": "User", "notASignal": "x"})
+    assert "notASignal" in str(excinfo.value)
+
+
+def test_check_preconditions_rejects_a_near_miss_of_owner_type():
+    """The dangerous typo: `owner_type` looks configured, silently isn't, and
+    the org guard never runs."""
+    with pytest.raises(ValueError):
+        check_preconditions({"owner_type": "Organization"})
+
+
+@pytest.mark.parametrize("near_miss", [
+    "organization",     # the likeliest slip: a model lower-casing gh's output
+    "ORGANIZATION",
+    "Organisation",     # British spelling
+    "org",
+    "Org",
+    "Bot",              # a real GitHub owner type, but not one hull models
+    "",
+])
+def test_check_preconditions_rejects_a_near_miss_of_the_owner_type_VALUE(near_miss):
+    """The value deserves the same treatment as the key above, because it has
+    the identical consequence. The blocker fires on an exact match against
+    "Organization", so any of these would pass an isinstance check, return
+    zero blockers, and hand an org-owned repo the very workflow this guard
+    exists to refuse -- with nothing on disk afterwards to notice it by."""
+    with pytest.raises(ValueError, match="ownerType"):
+        check_preconditions({"ownerType": near_miss})
+
+
+@pytest.mark.parametrize("bad", [5, ["Organization"], {"type": "Organization"}])
+def test_check_preconditions_rejects_a_non_string_owner_type(bad):
+    """Unhashable values (list, dict) included: the domain check must raise
+    ValueError naming the field, not a TypeError out of a set lookup."""
+    with pytest.raises(ValueError, match="ownerType"):
+        check_preconditions({"ownerType": bad})
+
+
+def test_owner_type_error_points_at_the_command_that_produces_it():
+    """The caller is a skill reading prose, so the message has to say where a
+    correct value comes from, not merely that this one was wrong."""
+    with pytest.raises(ValueError) as excinfo:
+        check_preconditions({"ownerType": "organization"})
+    message = str(excinfo.value)
+    assert "gh repo view" in message
+    assert "Organization" in message
+
+
+def test_the_org_blocker_and_the_domain_check_share_one_constant():
+    """If these ever drift, a value that validates could still fail to trip
+    the blocker -- which is precisely the bug being closed here."""
+    from hull.scaffold import OWNER_TYPE_ORGANIZATION, OWNER_TYPES
+
+    assert OWNER_TYPE_ORGANIZATION in OWNER_TYPES
+    assert check_preconditions({"ownerType": OWNER_TYPE_ORGANIZATION}).blockers
+
+
+def test_check_preconditions_rejects_a_hostile_license_secret():
+    with pytest.raises(ValueError, match="licenseSecret"):
+        check_preconditions({"ownerType": "Organization",
+                             "licenseSecret": "${{ github.token }}"})
+
+
+def test_check_preconditions_rejects_an_unknown_scanner():
+    with pytest.raises(ValueError, match="scanner"):
+        check_preconditions({"ownerType": "User", "scanner": "trufflehog"})
+
+
+def test_propose_config_still_rejects_owner_type():
+    """`ownerType` is an observation about the remote, not a setting -- it has
+    no home in .hull.json, so propose_config must refuse it rather than drop
+    it silently."""
+    with pytest.raises(ValueError, match="ownerType"):
+        propose_config({"ownerType": "Organization"})

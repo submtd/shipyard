@@ -140,3 +140,40 @@ def test_permissions_stay_least_privilege():
     assert granted, "no permissions rendered at all"
     for line in granted:
         assert line.endswith(": read"), f"non-read permission granted: {line}"
+
+
+# --- licenseSecret ---------------------------------------------------------
+#
+# Issue #24. Two goldens, not one: the licensed output is pinned byte-for-byte
+# like the default, and the default golden above continues to prove that a
+# config without the key renders exactly what hull rendered before it existed.
+
+
+def test_license_plan_matches_golden_byte_for_byte(tmp_path):
+    cfg = load_config(write(tmp_path, {"licenseSecret": "GITLEAKS_LICENSE"}))
+    assert render(build_plan(cfg)) == read_golden("security-license.yml")
+
+
+def test_license_secret_renders_as_a_quoted_secrets_reference(tmp_path):
+    cfg = load_config(write(tmp_path, {"licenseSecret": "ORG_GITLEAKS_KEY"}))
+    out = render(build_plan(cfg))
+    assert 'GITLEAKS_LICENSE: "${{ secrets.ORG_GITLEAKS_KEY }}"' in out
+
+
+def test_default_output_is_a_strict_prefix_of_the_licensed_output(tmp_path):
+    """Adopting licenseSecret must ADD a line and change nothing else --
+    that is what makes the upgrade reviewable in a diff."""
+    default = load_config(write(tmp_path, {}))
+    plain = render(build_plan(default))
+    licensed = read_golden("security-license.yml")
+    assert licensed.startswith(plain.rstrip("\n"))
+
+
+def test_licensed_output_still_grants_only_read_permissions(tmp_path):
+    """A license changes what the job can authenticate as, not what the
+    workflow token may do."""
+    cfg = load_config(write(tmp_path, {"licenseSecret": "GITLEAKS_LICENSE"}))
+    text = render(build_plan(cfg))
+    block = text.split("permissions:\n", 1)[1].split("jobs:", 1)[0]
+    for line in [l.strip() for l in block.splitlines() if l.strip()]:
+        assert line.endswith(": read"), f"non-read permission granted: {line}"
