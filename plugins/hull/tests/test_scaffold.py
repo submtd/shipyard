@@ -45,6 +45,20 @@ def test_propose_config_explicit_signals_round_trip_through_load_config(tmp_path
     assert loaded.scanner == "gitleaks"
 
 
+def test_propose_config_trufflehog_round_trips_through_load_config(tmp_path):
+    """propose_config's documented guarantee -- valid signals in produces a
+    dict load_config accepts -- exercised on the trufflehog path, which is
+    the one issue #27 added."""
+    cfg = propose_config({"scanner": "trufflehog"})
+    assert cfg == {"name": "security", "scanner": "trufflehog"}
+    (tmp_path / ".hull.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)
+    assert loaded is not None
+    assert loaded.name == "security"
+    assert loaded.scanner == "trufflehog"
+    assert loaded.license_secret is None
+
+
 @pytest.mark.parametrize("bad_name", ["a/b", "../evil", "${{ github.token }}", "a.b", "", 5])
 def test_propose_config_bad_name_raises_value_error_naming_field(bad_name):
     with pytest.raises(ValueError, match="name"):
@@ -189,6 +203,29 @@ def test_propose_config_carries_license_secret_through(tmp_path):
 def test_propose_config_rejects_unrenderable_license_secret(bad):
     with pytest.raises(ValueError, match="licenseSecret"):
         propose_config({"licenseSecret": bad})
+
+
+def test_propose_config_rejects_license_secret_for_a_licenseless_scanner():
+    """The bug this closes: propose_config used to hand back a dict that
+    config.load_config would then reject outright, because it validated only
+    the secret name's shape and never looked at which scanner it was being
+    set for."""
+    with pytest.raises(ValueError, match="licenseSecret") as excinfo:
+        propose_config({"scanner": "trufflehog", "licenseSecret": "GITLEAKS_LICENSE"})
+    assert "trufflehog" in str(excinfo.value)
+
+
+def test_check_preconditions_rejects_license_secret_for_a_licenseless_scanner():
+    """Same combination, checked at the precondition layer: it must be
+    refused before anything is written, not merely by load_config after the
+    fact."""
+    with pytest.raises(ValueError, match="licenseSecret") as excinfo:
+        check_preconditions({
+            "ownerType": "Organization",
+            "scanner": "trufflehog",
+            "licenseSecret": "GITLEAKS_LICENSE",
+        })
+    assert "trufflehog" in str(excinfo.value)
 
 
 # --- check_preconditions ---------------------------------------------------
@@ -386,13 +423,23 @@ def test_blocker_names_the_licenseless_scanner_concretely():
 
 
 def test_every_remedy_the_blocker_offers_actually_exists():
-    """Guards the message against drifting back into naming a scanner that
-    was removed from the registry."""
+    """Guards the message against both ways it could drift: naming a scanner
+    that is not registered, and naming zero licenseless alternatives (leaving
+    the remedy with nothing real to offer). `SCANNER_IDS == tuple(REGISTRY)`
+    always, so merely checking membership of the names found in REGISTRY is a
+    tautology; what can actually drift is whether any of the ids the message
+    names besides the one that triggered it (gitleaks) are licenseless."""
+    all_scanner_ids = set(REGISTRY) | {"nonexistent-scanner", "semgrep"}
     (blocker,) = check_preconditions({"ownerType": "Organization"}).blockers
-    named = [s for s in SCANNER_IDS if s in blocker]
-    assert "trufflehog" in named
-    for scanner_id in named:
-        assert scanner_id in REGISTRY
+    named = [s for s in all_scanner_ids if s in blocker]
+    assert named == [s for s in named if s in REGISTRY], (
+        f"blocker names a scanner that is not registered: {blocker!r}"
+    )
+    licenseless_named = [s for s in named if REGISTRY[s].license_env is None]
+    assert licenseless_named, (
+        "blocker must name at least one registered, licenseless scanner as "
+        f"a real remedy (named: {named!r})"
+    )
 
 
 def test_trufflehog_carries_a_base_equals_head_advisory():
