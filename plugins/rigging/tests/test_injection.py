@@ -75,6 +75,31 @@ def node_output(tmp_path):
 
 
 @pytest.fixture
+def node_pnpm_output(tmp_path):
+    return render_for(
+        tmp_path, {"node": {"versions": ["20"], "packageManager": "pnpm"}})
+
+
+@pytest.fixture
+def node_yarn1_output(tmp_path):
+    return render_for(
+        tmp_path, {"node": {"versions": ["20"], "packageManager": "yarn1"}})
+
+
+@pytest.fixture
+def node_yarn_berry_output(tmp_path):
+    return render_for(
+        tmp_path,
+        {"node": {"versions": ["20"], "packageManager": "yarn-berry"}})
+
+
+@pytest.fixture
+def node_bun_output(tmp_path):
+    return render_for(
+        tmp_path, {"node": {"versions": ["20"], "packageManager": "bun"}})
+
+
+@pytest.fixture
 def polyglot_output(tmp_path):
     return render_for(
         tmp_path,
@@ -83,10 +108,16 @@ def polyglot_output(tmp_path):
 
 
 @pytest.fixture
-def all_outputs(python_output, node_output, polyglot_output):
+def all_outputs(python_output, node_output, node_pnpm_output,
+                 node_yarn1_output, node_yarn_berry_output, node_bun_output,
+                 polyglot_output):
     return {
         "python": python_output,
         "node": node_output,
+        "node-pnpm": node_pnpm_output,
+        "node-yarn1": node_yarn1_output,
+        "node-yarn-berry": node_yarn_berry_output,
+        "node-bun": node_bun_output,
         "polyglot": polyglot_output,
     }
 

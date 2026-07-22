@@ -315,3 +315,31 @@ def test_manager_for_a_stack_not_being_proposed_is_rejected():
     and dropping it silently would leave nothing on disk to notice by."""
     with pytest.raises(ValueError, match="packageManagers"):
         propose_config({"stacks": ["python"], "packageManagers": {"node": "pnpm"}})
+
+
+def test_manager_for_a_stack_with_no_manager_concept_is_rejected():
+    """`config._valid_package_manager` refuses `packageManager` for any
+    stack but node. propose_config must refuse it too, before it ever
+    reaches disk -- otherwise it emits a `.rigging.json` that
+    `load_config` rejects, and the init skill has already written the file
+    to disk by the time that surfaces."""
+    with pytest.raises(ValueError, match="packageManagers"):
+        propose_config({
+            "stacks": ["python", "node"],
+            "packageManagers": {"python": "npm", "node": "pnpm"},
+        })
+
+
+def test_package_managers_signal_round_trips_through_load_config(tmp_path):
+    """The one non-negotiable guarantee (see the subset round-trip test
+    above) exercised WITH the packageManagers signal set -- the existing
+    round-trip test never set this signal, which is why a stack with no
+    manager concept could reach load_config unrejected."""
+    cfg = propose_config({
+        "stacks": ["python", "node"],
+        "packageManagers": {"node": "yarn1"},
+    })
+    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
+    loaded = load_config(tmp_path)  # must not raise
+    assert loaded.stacks["node"].package_manager == "yarn1"
+    assert loaded.stacks["python"].package_manager is None

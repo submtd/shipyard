@@ -315,3 +315,46 @@ def test_bare_package_json_with_no_field_still_selects_npm(tmp_path):
 
 def test_no_package_json_reports_nothing(tmp_path):
     assert node_package_manager(tmp_path) == (None, None)
+
+
+@pytest.mark.parametrize("declared", ["pnpm", "pnpm@"])
+def test_versionless_declared_pnpm_is_refused_with_lockfile(tmp_path, declared):
+    """A bare `"pnpm"` or trailing-`@` `"pnpm@"` names the manager but gives
+    pnpm/action-setup no version to resolve, which is exactly what it
+    errors on. Naming the field is not the same as pinning a version in
+    it -- selecting pnpm here would render the precise broken setup step
+    the pnpm refusal exists to prevent."""
+    (tmp_path / "package.json").write_text(json.dumps({"packageManager": declared}))
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "pnpm-lock.yaml" in reason
+    assert "version" in reason
+
+
+@pytest.mark.parametrize("declared", ["pnpm", "pnpm@"])
+def test_versionless_declared_pnpm_is_refused_without_lockfile(tmp_path, declared):
+    """The no-lockfile fallthrough must apply the same version requirement
+    as the lockfile branch -- it is the same underlying failure
+    (pnpm/action-setup cannot resolve a version), just reached with no
+    pnpm-lock.yaml on disk yet."""
+    (tmp_path / "package.json").write_text(json.dumps({"packageManager": declared}))
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "pnpm" in reason
+    assert "version" in reason
+
+
+def test_versioned_declared_pnpm_is_selected_with_lockfile(tmp_path):
+    """Control: a real version still selects pnpm, lockfile present."""
+    (tmp_path / "package.json").write_text(
+        json.dumps({"packageManager": "pnpm@9.12.0"}))
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    assert node_package_manager(tmp_path) == ("pnpm", None)
+
+
+def test_versioned_declared_pnpm_is_selected_without_lockfile(tmp_path):
+    """Control: a real version still selects pnpm, no lockfile."""
+    (tmp_path / "package.json").write_text(
+        json.dumps({"packageManager": "pnpm@9.12.0"}))
+    assert node_package_manager(tmp_path) == ("pnpm", None)

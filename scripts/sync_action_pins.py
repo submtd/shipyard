@@ -187,18 +187,37 @@ from pathlib import Path
 from rigging.config import Config as RC, StackConfig as RSC, load_config as rload
 from rigging.plan import build_plan as rplan
 from rigging.render import render as rrender
+from rigging.stacks import NODE_PACKAGE_MANAGERS, DEFAULT_NODE_PACKAGE_MANAGER
 from hull.config import Config as HC, load_config as hload
 from hull.plan import build_plan as hplan
 from hull.render import render as hrender
 
 open(".github/workflows/ci.yml", "w").write(rrender(rplan(rload(Path(".")))))
 open(".github/workflows/security.yml", "w").write(hrender(hplan(hload(Path(".")))))
-for fn, cfg in {
+
+goldens = {
     "python.yml":   RC(name="ci", stacks={"python": RSC(versions=("3.9", "3.12"))}),
-    "node.yml":     RC(name="ci", stacks={"node": RSC(versions=("20",))}),
     "polyglot.yml": RC(name="ci", stacks={"python": RSC(versions=("3.12",)), "node": RSC(versions=("20",))}),
-}.items():
+}
+# One golden per registered node package manager, derived from the registry
+# rather than hardcoded -- npm keeps the plain "node.yml" name (it is the
+# default, selected by omitting packageManager entirely, matching how a
+# bare package.json actually resolves); every other manager gets
+# "node-<id>.yml". Deriving this from NODE_PACKAGE_MANAGERS means a future
+# manager's golden is regenerated automatically instead of silently going
+# stale the way pnpm/yarn/bun's did before this fix.
+for manager_id in NODE_PACKAGE_MANAGERS:
+    if manager_id == DEFAULT_NODE_PACKAGE_MANAGER:
+        fn = "node.yml"
+        stack = RSC(versions=("20",))
+    else:
+        fn = f"node-{manager_id}.yml"
+        stack = RSC(versions=("20",), package_manager=manager_id)
+    goldens[fn] = RC(name="ci", stacks={"node": stack})
+
+for fn, cfg in goldens.items():
     open("plugins/rigging/tests/golden/" + fn, "w").write(rrender(rplan(cfg)))
+
 open("plugins/hull/tests/golden/security.yml", "w").write(
     hrender(hplan(HC(name="security", scanner="gitleaks"))))
 """

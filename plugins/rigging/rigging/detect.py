@@ -106,6 +106,31 @@ def _declared_package_manager(root):
     return declared.split("@", 1)[0].strip().lower()
 
 
+def _declared_package_manager_version(root):
+    """Return the version component of package.json's `packageManager`
+    field (everything after the first `@`, stripped), or None when the
+    field is absent, has no `@`, or the version component is empty.
+
+    `_declared_package_manager` deliberately discards this -- it only ever
+    needed the name. pnpm needs the version too: `pnpm/action-setup` reads
+    the pnpm version to install from this exact field, and a bare `"pnpm"`
+    or trailing-`@` `"pnpm@"` names the manager without giving that action
+    anything to resolve. This is the version-half of that same field, kept
+    as its own function rather than folded into `_declared_package_manager`
+    so a bare name and a versioned one stay distinguishable to callers that
+    care (today: only the pnpm branches of `node_package_manager`).
+    """
+    data = _package_json(root)
+    if not isinstance(data, dict):
+        return None
+    declared = data.get("packageManager")
+    if not isinstance(declared, str) or "@" not in declared:
+        return None
+    _, _, version = declared.partition("@")
+    version = version.strip()
+    return version or None
+
+
 def _declared_yarn_major(root):
     """Return 1 or 2 for a declared yarn version, or None if undeclared.
 
@@ -238,6 +263,24 @@ def node_package_manager(root):
                 "installing anything. Add a `packageManager` field to "
                 "package.json (e.g. \"pnpm@9.12.0\") and re-run."
             )
+        if family == "pnpm" and not _declared_package_manager_version(root):
+            # declared == "pnpm" here (the branch above already handled
+            # every case where it doesn't), so the field names pnpm but
+            # carries no version -- e.g. `"packageManager": "pnpm"` or
+            # `"pnpm@"`. That satisfies "declares pnpm" but gives
+            # pnpm/action-setup nothing to resolve, which is the same
+            # failure as the missing-field case above, just with a
+            # different fix.
+            return None, (
+                "found pnpm-lock.yaml at the repo root, and package.json "
+                "declares `packageManager` as pnpm, but it pins no version "
+                "(e.g. \"pnpm\" or \"pnpm@\" instead of \"pnpm@9.12.0\"). "
+                "The pnpm setup action reads the pnpm version from that "
+                "field, and fails outright when it cannot resolve one -- so "
+                "rigging would be writing a job that cannot get as far as "
+                "installing anything. Pin a version in package.json's "
+                "`packageManager` field (e.g. \"pnpm@9.12.0\") and re-run."
+            )
         return family, None
 
     # No lockfile. The declared field still decides, and a bare package.json
@@ -263,6 +306,21 @@ def node_package_manager(root):
             f"rigging does not know how to drive that package manager. It "
             f"can drive: {known}. Use one of those, or open an issue if "
             f"{declared} should be supported."
+        )
+    if declared == "pnpm" and not _declared_package_manager_version(root):
+        # No lockfile at all yet, but the field already names pnpm without a
+        # version -- e.g. a freshly `pnpm init`ed repo before the first
+        # install. Same failure as the lockfile-present case above (nothing
+        # for pnpm/action-setup to resolve), so it gets the same refusal
+        # rather than silently falling through to npm.
+        return None, (
+            "package.json declares `packageManager` as pnpm, but it pins no "
+            "version (e.g. \"pnpm\" or \"pnpm@\" instead of \"pnpm@9.12.0\"). "
+            "The pnpm setup action reads the pnpm version from that field, "
+            "and fails outright when it cannot resolve one -- so rigging "
+            "would be writing a job that cannot get as far as installing "
+            "anything. Pin a version in package.json's `packageManager` "
+            "field (e.g. \"pnpm@9.12.0\") and re-run."
         )
     if declared is not None and declared in stacks.NODE_PACKAGE_MANAGERS:
         return declared, None

@@ -100,6 +100,19 @@ def _valid_package_managers(signals, stack_ids):
                 f"signals['packageManagers'] names stack {stack_id!r}, which "
                 f"is not in signals['stacks']."
             )
+        # Mirrors config._valid_package_manager's own stack-id check -- a
+        # packageManager only means anything for node. Without this,
+        # propose_config would happily emit `stacks.<id>.packageManager` for
+        # a stack load_config rejects it on, breaking propose_config's
+        # contract that valid signals produce a config load_config accepts.
+        # This is the third site hardcoding "node" (alongside
+        # config._valid_package_manager and plan._manager_steps); if you
+        # change one, check the other two.
+        if stack_id != "node":
+            raise ValueError(
+                f"signals['packageManagers'] names stack {stack_id!r}, which "
+                f"has no package manager to select."
+            )
         if manager_id not in NODE_PACKAGE_MANAGERS:
             raise ValueError(
                 f"signals['packageManagers'][{stack_id!r}] must be one of "
