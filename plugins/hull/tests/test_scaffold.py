@@ -7,11 +7,13 @@ present/absent for both flat and nested candidate paths.
 """
 from __future__ import annotations
 
+import itertools
 import json
 
 import pytest
 
-from hull.config import load_config
+from hull import scaffold
+from hull.config import CONFIG_NAME, load_config
 from hull.scanners import REGISTRY, SCANNER_IDS
 from hull.scaffold import (
     SECURITY_FILES,
@@ -21,42 +23,60 @@ from hull.scaffold import (
 )
 
 
+ABSENT = object()
+
+
+def _candidate_signals(space):
+    """Every combination of one sample per signal key. A key whose chosen
+    sample is ABSENT is omitted from the produced dict entirely."""
+    keys = sorted(space)
+    for combo in itertools.product(*(space[k] for k in keys)):
+        yield {k: v for k, v in zip(keys, combo) if v is not ABSENT}
+
+
+def _assert_round_trips(tmp_path, signals, index):
+    """The two-outcome contract for one signal combo."""
+    try:
+        cfg = propose_config(signals)
+    except ValueError:
+        return  # a deliberate rejection is an allowed outcome
+    except Exception as exc:  # noqa: BLE001 - the point is to catch the wrong type
+        pytest.fail(
+            f"propose_config({signals!r}) raised {type(exc).__name__}, not "
+            f"ValueError: {exc}"
+        )
+    sub = tmp_path / str(index)
+    sub.mkdir()
+    (sub / CONFIG_NAME).write_text(json.dumps(cfg))
+    loaded = load_config(sub)  # must not raise
+    assert loaded is not None, (
+        f"load_config returned None for {signals!r} -> {cfg!r}"
+    )
+
+
+SIGNAL_SPACE = {
+    "name": (ABSENT, "security"),
+    "scanner": (ABSENT,) + SCANNER_IDS,       # ABSENT (default gitleaks), gitleaks, trufflehog
+    "pushBranches": (ABSENT, ["main", "master"]),
+    "licenseSecret": (ABSENT, "GITLEAKS_LICENSE"),
+}
+
+
+def test_signal_space_covers_every_signal_key():
+    # Loud-omission guard: add a key to SIGNAL_KEYS without declaring its
+    # samples here and this fails, rather than the round-trip silently
+    # skipping the new key.
+    assert set(SIGNAL_SPACE) == scaffold.SIGNAL_KEYS
+
+
+def test_propose_config_round_trips_over_signal_space(tmp_path):
+    for index, signals in enumerate(_candidate_signals(SIGNAL_SPACE)):
+        _assert_round_trips(tmp_path, signals, index)
+
+
 def test_propose_config_defaults():
     cfg = propose_config({})
     assert cfg == {"name": "security", "scanner": "gitleaks"}
-
-
-def test_propose_config_defaults_round_trip_through_load_config(tmp_path):
-    cfg = propose_config({})
-    (tmp_path / ".hull.json").write_text(json.dumps(cfg))
-    loaded = load_config(tmp_path)
-    assert loaded is not None
-    assert loaded.name == "security"
-    assert loaded.scanner == "gitleaks"
-
-
-def test_propose_config_explicit_signals_round_trip_through_load_config(tmp_path):
-    cfg = propose_config({"name": "my-Scan_1", "scanner": "gitleaks"})
-    assert cfg == {"name": "my-Scan_1", "scanner": "gitleaks"}
-    (tmp_path / ".hull.json").write_text(json.dumps(cfg))
-    loaded = load_config(tmp_path)
-    assert loaded is not None
-    assert loaded.name == "my-Scan_1"
-    assert loaded.scanner == "gitleaks"
-
-
-def test_propose_config_trufflehog_round_trips_through_load_config(tmp_path):
-    """propose_config's documented guarantee -- valid signals in produces a
-    dict load_config accepts -- exercised on the trufflehog path, which is
-    the one issue #27 added."""
-    cfg = propose_config({"scanner": "trufflehog"})
-    assert cfg == {"name": "security", "scanner": "trufflehog"}
-    (tmp_path / ".hull.json").write_text(json.dumps(cfg))
-    loaded = load_config(tmp_path)
-    assert loaded is not None
-    assert loaded.name == "security"
-    assert loaded.scanner == "trufflehog"
-    assert loaded.license_secret is None
 
 
 @pytest.mark.parametrize("bad_name", ["a/b", "../evil", "${{ github.token }}", "a.b", "", 5])
