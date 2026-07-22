@@ -696,6 +696,59 @@ def test_bun_runs_the_repos_test_script_not_buns_runner():
     from rigging.stacks import NODE_PACKAGE_MANAGERS
 
     assert NODE_PACKAGE_MANAGERS["bun"].test == ("bun", "run", "test")
+
+
+# --- invariants inherited from the deleted FOREIGN_NODE_LOCKFILES tests ----
+#
+# Task 2 removed three guards along with the table they described. The
+# properties they protected are still real; these are their replacements
+# against the registry that took its place.
+
+
+def test_install_and_test_invoke_the_same_binary():
+    """Replaces the old drift guard that checked the npm constant against the
+    node steps' first word. Catches the copy-paste error this table invites:
+    a pnpm entry whose test line still says npm."""
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
+    for manager_id, manager in NODE_PACKAGE_MANAGERS.items():
+        assert manager.install[0] == manager.test[0], manager_id
+
+
+def test_no_manager_claims_package_lock_except_npm():
+    """`npm ci` REQUIRES package-lock.json. Another manager claiming it would
+    select the wrong toolchain for exactly the repos rigging always handled
+    correctly."""
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
+    for manager_id, manager in NODE_PACKAGE_MANAGERS.items():
+        if manager_id != "npm":
+            assert "package-lock.json" not in manager.lockfiles
+
+
+def test_no_lockfile_collides_with_a_stack_detect_file():
+    """A lockfile that was also a detect file would make stack detection and
+    manager selection fight over the same marker."""
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
+    detect_files = set(REGISTRY["node"].detect_files)
+    for manager in NODE_PACKAGE_MANAGERS.values():
+        assert not set(manager.lockfiles) & detect_files
+
+
+def test_only_yarn_shares_a_lockfile_between_managers():
+    """yarn1 and yarn-berry deliberately share yarn.lock -- that sharing is
+    what detection has to disambiguate by major version. Any OTHER pair
+    sharing a lockfile would make selection genuinely undecidable."""
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
+    owners = {}
+    for manager_id, manager in NODE_PACKAGE_MANAGERS.items():
+        for lockfile in manager.lockfiles:
+            owners.setdefault(lockfile, set()).add(manager_id)
+    for lockfile, ids in owners.items():
+        if len(ids) > 1:
+            assert ids == {"yarn1", "yarn-berry"}, (lockfile, ids)
 ```
 
 - [ ] **Step 3: Run to verify the goldens fail**
