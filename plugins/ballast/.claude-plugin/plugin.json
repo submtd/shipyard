@@ -1,7 +1,7 @@
 {
   "name": "ballast",
   "displayName": "ballast",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Configures the pytest runner: renders pytest.ini from .ballast.json so tests resolve and collect correctly.",
   "license": "MIT",
   "keywords": [
