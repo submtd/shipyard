@@ -1,6 +1,6 @@
 ---
 name: init
-description: Use to set up secret scanning in a repository via hull - proposes a .hull.json and scaffolds an injection-safe gitleaks GitHub Actions workflow, never overwriting existing files.
+description: Use to set up secret scanning in a repository via hull - proposes a .hull.json and scaffolds an injection-safe GitHub Actions workflow (gitleaks or trufflehog), never overwriting existing files.
 ---
 
 # Initialising hull in a repo
@@ -53,9 +53,10 @@ This has three possible outcomes, and they are not the same thing:
   repair or merge logic for it.
 
 There is no stack-detection step here, unlike `rigging:init`/`ballast:init`.
-Secret scanning is stack-agnostic — gitleaks scans the repo's git history
-and working tree for credential-shaped strings regardless of what language
-or framework the code is written in — so there is nothing to detect.
+Secret scanning is stack-agnostic — either scanner scans the repo's git
+history and working tree for credential-shaped strings regardless of what
+language or framework the code is written in — so there is nothing to
+detect.
 
 ## 2. Check the preconditions before writing anything
 
@@ -176,8 +177,12 @@ Build a signals dict and ask the user only for what you cannot infer:
     the organization blocker and the user does not want to obtain a licence.
 
   Both are pinned to an immutable SHA and both are byte-identity tested.
-  Ask the user which they want whenever the organization blocker fires;
-  otherwise take the default.
+  You only reach this section once section 2 came back with no blockers, so
+  there is no live blocker to ask about here — if the organization blocker
+  fired, section 2 already stopped the flow, and the way forward is the one
+  its message states: the *user* re-runs `hull:init`, this time naming
+  `"trufflehog"` as the scanner (or supplying `licenseSecret`), and section 3
+  is reached again on that fresh run. Absent that, take the default.
 - `pushBranches` — optional, defaults to `["main"]`. Pull requests always
   trigger the scan, so `push` is restricted to the long-lived branches;
   without that, every PR raised from a branch in the same repo scans twice.
@@ -374,13 +379,16 @@ not always the person who answered section 2's questions:
   either the owner is a personal account, or `licenseSecret` is configured,
   or the owner type could not be determined — say **which** of the three, so
   the user knows whether a red job is expected.
-- Report every advisory `check_preconditions` returned, verbatim. Today that
-  is the fork-PR one: **fork pull requests cannot read repository or
-  organization secrets**, so the gitleaks job fails on fork PRs even with a
-  valid license. There is no config that changes this — it is how GitHub
-  protects secrets from untrusted contributors — so a repo taking fork
-  contributions (keel's `contributions` of `"fork"` or `"both"`) should not
-  make this a required check for fork PRs.
+- Report every advisory `check_preconditions` returned, verbatim. Which one
+  you get depends on the scanner (same as section 2): `gitleaks` returns the
+  fork-PR one — **fork pull requests cannot read repository or organization
+  secrets**, so the gitleaks job fails on fork PRs even with a valid license.
+  There is no config that changes this — it is how GitHub protects secrets
+  from untrusted contributors — so a repo taking fork contributions (keel's
+  `contributions` of `"fork"` or `"both"`) should not make this a required
+  check for fork PRs. `trufflehog` returns the `BASE == HEAD` one instead —
+  rare, and not a finding or a hull bug when it happens. Neither scanner
+  returns both.
 
 Point the user at:
 
@@ -427,19 +435,25 @@ in this one:
 
 Say this to the user plainly when `hull:init` finishes on a repo that
 already has commits. The rendered workflow triggers on `push` and
-`pull_request`, and `gitleaks-action` scans the *commit range of the event*
+`pull_request`, and both scanners only scan the *commit range of the event*
 — that's what `fetch-depth: 0` is there to make possible. So the very run
-triggered by the commit that adds `security.yml` scans only that commit.
+triggered by the commit that adds `security.yml` scans only that commit,
+whichever scanner you chose.
 
 The consequence is worth being explicit about, because the green check is
 misleading: **a secret committed before adoption is not found by this
 workflow.** The repo shows a passing secret-scan and has never actually
 been scanned.
 
-Recommend a one-time sweep over the full history at adoption:
+Recommend a one-time sweep over the full history at adoption, with the
+scanner you scaffolded:
 
     gitleaks detect --source . --redact
 
-(`detect` walks git history; the workflow's `protect`-style range scan does
-not.) If it finds anything, rotating the credential is the first step —
+or, for trufflehog:
+
+    trufflehog git file://. --results=verified,unknown
+
+(both walk full git history; the workflow's per-event range scan does not.)
+If either finds anything, rotating the credential is the first step —
 rewriting history does not un-leak a secret that has already been pushed.

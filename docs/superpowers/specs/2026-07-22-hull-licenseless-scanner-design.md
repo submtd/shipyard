@@ -130,9 +130,17 @@ not the blocker channel, and the distinction is the same one #24 established:
 ## Risks
 
 - **The pin is a release SHA of the `trufflehog` repo itself**, not a
-  dedicated action repo — the action lives at that repo's root. Dependabot
-  bumps it like any other pinned action, and `scripts/sync_action_pins.py`
-  propagates the bump back into the registry. No new mechanism.
+  dedicated action repo — the action lives at that repo's root. This repo's
+  own `.github/dependabot.yml` only scans `github-actions` refs that appear
+  in THIS repo's workflow files, and `trufflesecurity/trufflehog` appears in
+  none of them (`security.yml` here deliberately stays on gitleaks) — so
+  Dependabot will never propose a bump for it. The pin has no automated bump
+  path today and must be updated by hand. `scripts/sync_action_pins.py`
+  doesn't help either: it regenerates only
+  `plugins/hull/tests/golden/security.yml`, so it does not know about the
+  newer trufflehog goldens and a future `actions/checkout` bump would leave
+  them stale. No new mechanism exists for either problem; both are being
+  filed as a separate issue rather than fixed here.
 - **AGPL 3.0.** TruffleHog OSS is AGPL; it runs as a CI step against the
   repo, not linked into anything shipped, so this is not a licensing concern
   for consumers. Worth stating in the skill so nobody has to work it out.

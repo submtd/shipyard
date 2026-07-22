@@ -30,7 +30,7 @@
     {
       "name": "hull",
       "source": "./plugins/hull",
-      "description": "Authors a secret-scanning CI workflow (gitleaks) for a repo.",
+      "description": "Authors a secret-scanning CI workflow (gitleaks or trufflehog) for a repo.",
       "category": "workflow"
     },
     {
