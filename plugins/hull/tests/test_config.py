@@ -64,10 +64,10 @@ def test_invalid_name_raises_naming_field(tmp_path, name):
 
 def test_unknown_scanner_raises_naming_scanner_and_allowed(tmp_path):
     with pytest.raises(ConfigError) as e:
-        load_config(write(tmp_path, {"scanner": "trufflehog"}))
+        load_config(write(tmp_path, {"scanner": "semgrep"}))
     msg = str(e.value)
     assert "scanner" in msg
-    assert "trufflehog" in msg
+    assert "semgrep" in msg
     assert "gitleaks" in msg
 
 

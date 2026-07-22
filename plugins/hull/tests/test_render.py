@@ -177,3 +177,33 @@ def test_licensed_output_still_grants_only_read_permissions(tmp_path):
     block = text.split("permissions:\n", 1)[1].split("jobs:", 1)[0]
     for line in [l.strip() for l in block.splitlines() if l.strip()]:
         assert line.endswith(": read"), f"non-read permission granted: {line}"
+
+
+def test_trufflehog_matches_golden_byte_for_byte(tmp_path):
+    cfg = load_config(write(tmp_path, {"scanner": "trufflehog"}))
+    assert render(build_plan(cfg)) == read_golden("security-trufflehog.yml")
+
+
+def test_trufflehog_renders_no_env_block(tmp_path):
+    """It needs no secret at all, so an `env:` block would be an empty
+    mapping -- the renderer omits a falsy env rather than emitting one."""
+    cfg = load_config(write(tmp_path, {"scanner": "trufflehog"}))
+    assert "env:" not in render(build_plan(cfg))
+
+
+def test_trufflehog_grants_narrower_permissions_than_gitleaks(tmp_path):
+    """It reads base and head from the event payload rather than
+    enumerating a PR's commits through the API, so it does not need the
+    `pull-requests: read` gitleaks requires."""
+    truffle = render(build_plan(load_config(write(tmp_path, {"scanner": "trufflehog"}))))
+    assert "pull-requests: read" not in truffle
+    assert "contents: read" in truffle
+
+
+def test_gitleaks_goldens_did_not_move(tmp_path):
+    """The whole-file guard: adding a scanner must not perturb the existing
+    one's output in any way."""
+    plain = load_config(write(tmp_path, {}))
+    assert render(build_plan(plain)) == read_golden("security.yml")
+    licensed = load_config(write(tmp_path, {"licenseSecret": "GITLEAKS_LICENSE"}))
+    assert render(build_plan(licensed)) == read_golden("security-license.yml")

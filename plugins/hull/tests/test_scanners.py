@@ -23,7 +23,7 @@ _SHA_PINNED_REF_RE = re.compile(r"[^@\s]+@[0-9a-f]{40}")
 
 
 def test_registry_keys():
-    assert tuple(REGISTRY) == ("gitleaks",)
+    assert tuple(REGISTRY) == ("gitleaks", "trufflehog")
 
 
 def test_scanner_ids_derived_from_registry():
@@ -31,10 +31,10 @@ def test_scanner_ids_derived_from_registry():
 
 
 def test_scanner_ids_value():
-    assert SCANNER_IDS == ("gitleaks",)
+    assert SCANNER_IDS == ("gitleaks", "trufflehog")
 
 
-@pytest.mark.parametrize("key", ["gitleaks"])
+@pytest.mark.parametrize("key", ["gitleaks", "trufflehog"])
 def test_spec_id_matches_registry_key(key):
     assert REGISTRY[key].id == key
 
@@ -172,3 +172,30 @@ def test_gitleaks_needs_no_scan_with():
     """gitleaks is configured entirely through env, so adding this field
     must not have given it a `with:` block."""
     assert REGISTRY["gitleaks"].scan_with is None
+
+
+def test_trufflehog_is_registered_and_has_no_license_gate():
+    assert "trufflehog" in SCANNER_IDS
+    assert REGISTRY["trufflehog"].license_env is None
+
+
+def test_trufflehog_reports_verified_and_unknown_results():
+    """--results is the noise/recall dial. `unknown` is included because a
+    secret trufflehog cannot verify is exactly the kind it should not stay
+    quiet about; `unverified` is excluded because reporting everything
+    trains a team to ignore the check."""
+    extra_args = REGISTRY["trufflehog"].scan_with["extra_args"]
+    assert extra_args == "--results=verified,unknown"
+    assert "unverified" not in extra_args
+
+
+def test_at_least_two_scanners_are_registered():
+    """The registry's second entry is what makes `scanner` a real choice and
+    the org blocker's "choose a scanner with no license gate" remedy real."""
+    assert len(SCANNER_IDS) >= 2
+
+
+def test_at_least_one_registered_scanner_needs_no_license():
+    """The property #27 exists to establish, asserted directly rather than
+    by naming trufflehog -- a future registry must not lose it."""
+    assert any(spec.license_env is None for spec in REGISTRY.values())

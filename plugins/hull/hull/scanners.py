@@ -90,6 +90,35 @@ REGISTRY: dict[str, ScannerSpec] = {
         # scaffold a workflow that provably cannot go green.
         license_env="GITLEAKS_LICENSE",
     ),
+    "trufflehog": ScannerSpec(
+        id="trufflehog",
+        action_ref="trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55",
+        action_ref_version="v3.95.9",
+        checkout_fetch_depth="0",
+        # Nothing to pass: trufflehog needs no token and no license, which is
+        # the entire reason this entry exists. The renderer omits a falsy
+        # env rather than emitting an empty mapping.
+        env={},
+        # Narrower than gitleaks deliberately, and not an oversight: this
+        # action reads base and head from the event payload instead of
+        # enumerating a pull request's commits through the API, and that API
+        # call is exactly why gitleaks additionally needs pull-requests:read.
+        permissions=("contents: read",),
+        # AGPL 3.0 open source, no license key, no organization gate. This is
+        # the property the whole entry exists for -- see check_preconditions,
+        # which keys its organization blocker off license_env being set.
+        license_env=None,
+        # trufflehog's own documented recommendation. `verified` means the
+        # credential was live-tested and works; `unknown` means it has no
+        # verifier for that shape and could not test it. Both are reported
+        # because a secret the tool CANNOT verify is exactly the kind it
+        # should not stay quiet about -- in a private repo, internal and
+        # custom token formats are often most of them. `unverified` is
+        # excluded: reporting everything trains a team to ignore the check,
+        # which is the failure mode the organization blocker exists to
+        # prevent in the first place.
+        scan_with={"extra_args": "--results=verified,unknown"},
+    ),
 }
 
 SCANNER_IDS: tuple[str, ...] = tuple(REGISTRY)

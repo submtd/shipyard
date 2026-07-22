@@ -51,7 +51,7 @@ def test_propose_config_bad_name_raises_value_error_naming_field(bad_name):
         propose_config({"name": bad_name})
 
 
-@pytest.mark.parametrize("bad_scanner", ["trufflehog", "", 5])
+@pytest.mark.parametrize("bad_scanner", ["semgrep", "", 5])
 def test_propose_config_unknown_scanner_raises_value_error_naming_field(bad_scanner):
     with pytest.raises(ValueError, match="scanner"):
         propose_config({"scanner": bad_scanner})
@@ -372,7 +372,7 @@ def test_check_preconditions_rejects_a_hostile_license_secret():
 
 def test_check_preconditions_rejects_an_unknown_scanner():
     with pytest.raises(ValueError, match="scanner"):
-        check_preconditions({"ownerType": "User", "scanner": "trufflehog"})
+        check_preconditions({"ownerType": "User", "scanner": "semgrep"})
 
 
 def test_propose_config_still_rejects_owner_type():
