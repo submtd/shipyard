@@ -125,11 +125,14 @@ differently — that is why they are separate rather than one list of strings:
   the free license key, add it as a repository or organization Actions secret,
   and re-run `hull:init` telling you the secret's name so it lands in
   `licenseSecret` — or re-run `hull:init` choosing `"trufflehog"`, which has
-  no license gate at all. That second remedy became real in 0.7.0; before it,
-  the registry had one entry and the blocker's own message named nothing.
+  no license gate at all. That second remedy is new; before it, the registry
+  had one entry and the blocker's own message named nothing.
 - **`advisories` is non-empty** — these are **not** blockers. Report them
-  alongside a successful init, never instead of one. Today's single advisory
-  is the fork-PR one described in section 3 under `licenseSecret`.
+  alongside a successful init, never instead of one. Which one you get
+  depends on the scanner: `gitleaks` returns the fork-PR caveat described in
+  section 3 under `licenseSecret`, and `trufflehog` returns the
+  `BASE == HEAD` one. Neither scanner returns both — the fork-PR advisory is
+  about a secret being withheld, and `trufflehog` reads no secret.
 
 `check_preconditions` raises `ValueError` naming the key on an unrecognised
 signal — including a near-miss like `owner_type` for `ownerType`, which would
@@ -321,9 +324,9 @@ Prove what's on disk is sound:
   two ways:
 
   1. Every `- run:` step body (via `render.iter_run_blocks`) must be free of
-     `${{`. (Increment 1's only scanner, gitleaks, has no `run` step — it's
-     a single `uses:` action — so today this list is always empty; the check
-     stays in place for the day a future scanner adds one.)
+     `${{`. (Neither registered scanner has a `run` step — both gitleaks and
+     trufflehog are a single `uses:` action — so today this list is always
+     empty; the check stays in place for the day a future scanner adds one.)
   2. Every `${{ ... }}` expression that appears **anywhere** in the rendered
      output must be a bare `${{ secrets.<NAME> }}` lookup — nothing else,
      and never a `github.*` context reference. This is the load-bearing
@@ -412,7 +415,7 @@ in this one:
   `on: [push, pull_request]`), including a scheduled or manually-dispatched
   full-history sweep — see the adoption note below
 - scan-scope configuration (path allow/deny lists, custom gitleaks rules) —
-  today's job runs gitleaks with its own defaults
+  today's job runs the configured scanner with its own defaults
 - migrating or reconciling a pre-existing, foreign workflow file at
   `.github/workflows/<name>.yml`
 - an interactive edit path for an existing `.hull.json` (increment 1's only
