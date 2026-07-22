@@ -1,10 +1,65 @@
+import itertools
 import json
 from pathlib import Path
 
 import pytest
 
+from keel import scaffold
 from keel.scaffold import propose_config, classify_files
-from keel.config import load_config, ConfigError
+from keel.config import CONFIG_NAME, load_config, ConfigError, CONTRIBUTIONS, REVIEW_POLICIES
+
+
+ABSENT = object()
+
+
+def _candidate_signals(space):
+    """Every combination of one sample per signal key. A key whose chosen
+    sample is ABSENT is omitted from the produced dict entirely."""
+    keys = sorted(space)
+    for combo in itertools.product(*(space[k] for k in keys)):
+        yield {k: v for k, v in zip(keys, combo) if v is not ABSENT}
+
+
+def _assert_round_trips(tmp_path, signals, index):
+    """The two-outcome contract for one signal combo."""
+    try:
+        cfg = propose_config(signals)
+    except ValueError:
+        return  # a deliberate rejection is an allowed outcome
+    except Exception as exc:  # noqa: BLE001 - the point is to catch the wrong type
+        pytest.fail(
+            f"propose_config({signals!r}) raised {type(exc).__name__}, not "
+            f"ValueError: {exc}"
+        )
+    sub = tmp_path / str(index)
+    sub.mkdir()
+    (sub / CONFIG_NAME).write_text(json.dumps(cfg))
+    loaded = load_config(sub)  # must not raise
+    assert loaded is not None, (
+        f"load_config returned None for {signals!r} -> {cfg!r}"
+    )
+
+
+SIGNAL_SPACE = {
+    "has_develop": (True, False),                # required: no ABSENT (propose_config does signals["has_develop"])
+    "production": (ABSENT, "main"),
+    "integration": (ABSENT, "develop"),          # only consumed under gitflow (has_develop True)
+    "contributions": (ABSENT,) + CONTRIBUTIONS,
+    "review_policy": (ABSENT,) + REVIEW_POLICIES,
+    "require_changelog": (ABSENT, True, False),
+}
+
+
+def test_signal_space_covers_every_signal_key():
+    # Loud-omission guard: add a key to SIGNAL_KEYS without declaring its
+    # samples here and this fails, rather than the round-trip silently
+    # skipping the new key.
+    assert set(SIGNAL_SPACE) == scaffold.SIGNAL_KEYS
+
+
+def test_propose_config_round_trips_over_signal_space(tmp_path):
+    for index, signals in enumerate(_candidate_signals(SIGNAL_SPACE)):
+        _assert_round_trips(tmp_path, signals, index)
 
 
 def test_no_develop_proposes_trunk():
@@ -57,29 +112,6 @@ def test_integration_signal_overrides_default():
 def test_integration_signal_defaults_to_develop():
     cfg = propose_config({"has_develop": True})
     assert cfg["branches"]["integration"] == "develop"
-
-
-@pytest.mark.parametrize("production", ["main", "master"])
-@pytest.mark.parametrize("has_develop", [True, False])
-@pytest.mark.parametrize("contributions", ["fork", "branch", "both"])
-@pytest.mark.parametrize("review_policy", ["approval", "review", "none"])
-def test_every_proposed_config_round_trips_through_load_config(
-        tmp_path, has_develop, contributions, review_policy, production):
-    # The one non-negotiable guarantee: init can never write a .keel.json that
-    # keel itself would reject.
-    cfg = propose_config({
-        "has_develop": has_develop,
-        "contributions": contributions,
-        "review_policy": review_policy,
-        "production": production,
-    })
-    (tmp_path / ".keel.json").write_text(json.dumps(cfg))
-    loaded = load_config(tmp_path)  # must not raise
-    assert loaded is not None
-    assert loaded.topology == cfg["topology"]
-    assert loaded.contributions == contributions
-    assert loaded.review_policy == review_policy
-    assert loaded.production == production
 
 
 @pytest.mark.parametrize("bad_signals,bad_field", [
