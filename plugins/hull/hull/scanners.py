@@ -42,6 +42,14 @@ class ScannerSpec:
     action_ref_version: str
     checkout_fetch_depth: str
     env: dict
+    #: Workflow-level GITHUB_TOKEN scopes this scanner needs, least-privilege.
+    #: Declared per scanner rather than fixed at the plan, because what a
+    #: scanner reads is a property of the scanner: gitleaks enumerates a PR's
+    #: commits via GET /repos/{o}/{r}/pulls/{n}/commits, which `contents:
+    #: read` does not grant -- without `pull-requests: read` every
+    #: pull_request run fails with 403 "Resource not accessible by
+    #: integration". Read scopes only; see test_permissions_stay_least_privilege.
+    permissions: tuple[str, ...] = ("contents: read",)
 
 
 REGISTRY: dict[str, ScannerSpec] = {
@@ -51,6 +59,7 @@ REGISTRY: dict[str, ScannerSpec] = {
         action_ref_version="v3",
         checkout_fetch_depth="0",
         env={"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"},
+        permissions=("contents: read", "pull-requests: read"),
     ),
 }
 

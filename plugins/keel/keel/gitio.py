@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from . import actions as _actions
+from .config import CONFIG_NAME
 
 GIT_TIMEOUT = 5.0
 
@@ -129,6 +130,30 @@ def _changelog_at_ref(ref, cwd=None, known_resolvable=False):
         # timeout raced in between). Unknown, not empty.
         return None
     return content
+
+
+def config_ever_committed(cwd=None):
+    """Whether `.keel.json` appears anywhere in this repo's history.
+
+    Used to tell two very different situations apart when the file is absent
+    from the working tree:
+
+    - **never committed** -- this repo simply does not use keel. Saying
+      anything would be noise in every repo that never opted in.
+    - **committed somewhere else** -- keel IS adopted here and this branch
+      just doesn't carry the config. That is a misconfiguration, and the
+      guard is silently inactive until it is fixed.
+
+    `--all` covers remote-tracking refs too, so a branch cut from a stale
+    `origin/develop` still sees the adoption on `origin/main`. Returns None
+    if git could not answer, which callers must treat as "say nothing" --
+    an unknown must never become a scary message about a repo that may not
+    use keel at all.
+    """
+    out = run_git(["log", "-1", "--format=%H", "--all", "--", CONFIG_NAME], cwd=cwd)
+    if out is None:
+        return None
+    return bool(out)
 
 
 def changelog_present(cwd=None):

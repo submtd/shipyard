@@ -8,6 +8,26 @@ from pathlib import Path
 from bosun import ecosystems
 
 
+#: Every signal `propose_config` understands. An unrecognised key is an error
+#: rather than something to ignore: silently dropping it means the caller
+#: believes they configured something they did not, and the scaffold quietly
+#: takes a default instead. That is the same reasoning the config loaders
+#: already apply to unknown FILE keys -- and it matters more here, because a
+#: dropped signal leaves nothing on disk to inspect afterwards.
+SIGNAL_KEYS = frozenset({"ecosystems", "intervals"})
+
+
+def _reject_unknown_signals(signals):
+    if not isinstance(signals, dict):
+        raise ValueError(f"signals must be a dict (got {signals!r}).")
+    unknown = set(signals) - SIGNAL_KEYS
+    if unknown:
+        raise ValueError(
+            f"unknown signal key(s) {', '.join(sorted(unknown))}. "
+            f"Allowed keys: {', '.join(sorted(SIGNAL_KEYS))}."
+        )
+
+
 def propose_config(signals):
     """Map detected repository signals to a .bosun.json dict.
 
@@ -31,6 +51,7 @@ def propose_config(signals):
     before anything is returned, so a caller can never persist a config
     that bosun itself would reject.
     """
+    _reject_unknown_signals(signals)
     ecosystem_ids = signals.get("ecosystems")
     if not isinstance(ecosystem_ids, (tuple, list)):
         raise ValueError(

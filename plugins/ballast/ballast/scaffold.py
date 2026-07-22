@@ -72,9 +72,30 @@ def _valid_flag_list(value, stack_id):
     return opts
 
 
+#: Every signal `propose_config` understands. An unrecognised key is an error
+#: rather than something to ignore: silently dropping it means the caller
+#: believes they configured something they did not, and the scaffold quietly
+#: takes a default instead. That is the same reasoning the config loaders
+#: already apply to unknown FILE keys -- and it matters more here, because a
+#: dropped signal leaves nothing on disk to inspect afterwards.
+SIGNAL_KEYS = frozenset({"stacks", "configs"})
+
+
+def _reject_unknown_signals(signals):
+    if not isinstance(signals, dict):
+        raise ValueError(f"signals must be a dict (got {signals!r}).")
+    unknown = set(signals) - SIGNAL_KEYS
+    if unknown:
+        raise ValueError(
+            f"unknown signal key(s) {', '.join(sorted(unknown))}. "
+            f"Allowed keys: {', '.join(sorted(SIGNAL_KEYS))}."
+        )
+
+
 def propose_config(signals):
     """Map detected repository signals to a `.ballast.json` dict. See the
     module docstring for the shape of `signals`."""
+    _reject_unknown_signals(signals)
     stack_ids = signals.get("stacks")
     if not isinstance(stack_ids, (tuple, list)) or not stack_ids:
         raise ValueError(

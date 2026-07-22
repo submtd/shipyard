@@ -35,6 +35,26 @@ def _valid_push_branches(signals):
     return list(branches)
 
 
+#: Every signal `propose_config` understands. An unrecognised key is an error
+#: rather than something to ignore: silently dropping it means the caller
+#: believes they configured something they did not, and the scaffold quietly
+#: takes a default instead. That is the same reasoning the config loaders
+#: already apply to unknown FILE keys -- and it matters more here, because a
+#: dropped signal leaves nothing on disk to inspect afterwards.
+SIGNAL_KEYS = frozenset({"name", "stacks", "versions", "pushBranches"})
+
+
+def _reject_unknown_signals(signals):
+    if not isinstance(signals, dict):
+        raise ValueError(f"signals must be a dict (got {signals!r}).")
+    unknown = set(signals) - SIGNAL_KEYS
+    if unknown:
+        raise ValueError(
+            f"unknown signal key(s) {', '.join(sorted(unknown))}. "
+            f"Allowed keys: {', '.join(sorted(SIGNAL_KEYS))}."
+        )
+
+
 def propose_config(signals):
     """Map detected repository signals to a .rigging.json dict (camelCase
     keys, though rigging's schema is all-lowercase today).
@@ -51,6 +71,7 @@ def propose_config(signals):
     ValueError -- naming the bad field -- before anything is returned, so a
     caller can never persist a config that rigging itself would reject.
     """
+    _reject_unknown_signals(signals)
     name = signals.get("name", "ci")
     if not isinstance(name, str) or not NAME_RE.fullmatch(name):
         raise ValueError(

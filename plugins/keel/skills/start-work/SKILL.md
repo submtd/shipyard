@@ -58,8 +58,20 @@ step 3 - `upstream` on a fork, `origin` otherwise):
 Derive `<slug>` from the user's description: lowercase, hyphenated, no more than
 about five words.
 
+Then confirm the new branch actually carries the config:
+
+    test -f .keel.json && echo present || echo MISSING
+
+`MISSING` means the base you just branched from predates keel's adoption —
+the usual cause is `keel:init` having scaffolded onto `production` while
+this branch came from `integration`. keel is **completely inactive** on such
+a branch: no orientation, no rules, no warnings on a bad commit or push. Do
+not just carry on. Merge or rebase the branch that has `.keel.json` into
+your base first (see `keel:init` section 5), then re-cut this branch.
+
 ## 5. Confirm
 
-Tell the user the branch name, what it was based on, and that `CHANGELOG.md`
+Tell the user the branch name, what it was based on, that `.keel.json` is
+present on it, and that `CHANGELOG.md`
 will need an Unreleased entry - committed, not just edited - before the PR
 (unless `requireChangelog` is false).

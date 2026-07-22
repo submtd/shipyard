@@ -150,8 +150,27 @@ Prove what you wrote works:
   `::error::` and exits 1. That's the gate doing its job, not init failing;
   it's just not a usable verification signal, so don't use it as one here.
 
-Report: what you created, what you skipped (and why), the confirmed config, and
-the verification result. Note that `.gitignore`/`.editorconfig` were **not**
+**Under gitflow, get `.keel.json` onto the integration branch too.** This is
+the single most important thing in this section, and skipping it silently
+disables everything you just set up:
+
+- `keel:start-work` branches from `integration` (`develop`), not from the
+  branch you are standing on now.
+- If the scaffold only exists on `production`, every feature branch is cut
+  from a `develop` that has no `.keel.json` — so `load_config` finds nothing
+  and **no rule is evaluated on any feature branch**, which is precisely
+  where the guard is meant to work.
+
+So after committing here, make sure the config reaches `integration` before
+anyone runs `keel:start-work` — merge this branch into it (through a PR if
+`integration` is already protected), or scaffold on `integration` in the
+first place. Say explicitly in your report which branches now carry the
+config. The guard will flag this if it is missed (`[keel] This repo uses
+keel, but .keel.json is not on this branch...`), but that is a backstop, not
+the plan.
+
+Report: what you created, what you skipped (and why), the confirmed config,
+which branches carry it, and the verification result. Note that `.gitignore`/`.editorconfig` were **not**
 written — those belong to a stack-aware tool, not keel.
 
 Point the user at `keel:protect` to make the workflow real server-side, and at

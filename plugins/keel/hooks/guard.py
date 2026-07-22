@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from keel import ghio, gitio                    # noqa: E402
 from keel.actions import classify               # noqa: E402
-from keel.config import ConfigError, load_config  # noqa: E402
+from keel.config import CONFIG_NAME, ConfigError, load_config  # noqa: E402
 from keel.facts import Facts, Tri               # noqa: E402
 from keel.render import render                  # noqa: E402
 from keel.rules import aggregate, evaluate       # noqa: E402
@@ -87,7 +87,25 @@ def main():
                                            f"inactive until this is fixed."}))
         return 0
     if cfg is None:
-        return 0  # repo is not keel-managed
+        # Absent means one of two very different things, and collapsing them
+        # is what made the guard a silent no-op on gitflow's default adoption
+        # path: keel:init writes .keel.json on the current branch (normally
+        # `main`), keel:start-work then branches from INTEGRATION (`develop`),
+        # and the new branch carries no config -- so every rule was skipped,
+        # silently, on exactly the branches keel exists to watch.
+        #
+        # A repo that never adopted keel is genuinely nothing to say. A repo
+        # that HAS adopted it, on a branch that lacks the file, is a
+        # misconfiguration and must be as loud as a malformed config already
+        # is. Unknown (git could not answer) stays silent -- an unknown must
+        # never become a warning about a repo that may not use keel at all.
+        if gitio.config_ever_committed(cwd=cwd) is True:
+            print(json.dumps({"systemMessage":
+                              f"[keel] This repo uses keel, but {CONFIG_NAME} is "
+                              f"not on this branch, so every check is inactive "
+                              f"here. Merge or rebase from the branch that has "
+                              f"it (usually your production branch)."}))
+        return 0
 
     # `cwd` is identical for every action of one command, so anything that
     # only depends on `cwd` (the current branch) is computed once here

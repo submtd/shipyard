@@ -214,3 +214,26 @@ def test_classify_files_both_absent(tmp_path):
         ".ballast.json": "absent",
         "pytest.ini": "absent",
     }
+
+
+# --- Unknown signals -------------------------------------------------------
+#
+# Found by an end-to-end run: a typo'd signal key was silently ignored, so
+# the scaffold quietly took a default the user thought they had overridden.
+# The config LOADERS were hardened against exactly this in 0.3.0 ("an
+# unknown key is an error rather than something to ignore"), but the layer
+# above them had the opposite behaviour -- and it is worse here, because
+# there is no file left on disk to inspect afterwards.
+
+
+def test_unknown_signal_key_is_rejected_naming_it():
+    with pytest.raises(ValueError) as excinfo:
+        propose_config(dict({'stacks': ['python']}, notASignal="x"))
+    assert "notASignal" in str(excinfo.value)
+
+
+def test_a_near_miss_of_a_real_signal_is_rejected():
+    """The dangerous case is a typo of a key that exists: it looks configured
+    and silently isn't."""
+    with pytest.raises(ValueError):
+        propose_config(dict({'stacks': ['python']}, stack=["python"]))

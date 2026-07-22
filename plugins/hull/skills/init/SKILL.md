@@ -83,8 +83,12 @@ Build a signals dict and ask the user only for what you cannot infer:
 - `pushBranches` — optional, defaults to `["main"]`. Pull requests always
   trigger the scan, so `push` is restricted to the long-lived branches;
   without that, every PR raised from a branch in the same repo scans twice.
-  **Check the repo's actual default branch** (`git symbolic-ref --short
-  refs/remotes/origin/HEAD`) and set this when it isn't `main` — a repo on
+
+  List **every long-lived branch**, not just the default. Under gitflow that
+  is production *and* integration (`["main", "develop"]`) — most merges land
+  on `develop`, so omitting it means the scan never runs on the branch the
+  team integrates into. **Check the repo's actual default branch**
+  (`git symbolic-ref --short refs/remotes/origin/HEAD`) and set this when it isn't `main` — a repo on
   `master` that takes the default gets no push scan at all, and nothing says
   so. Use the same value rigging's `.rigging.json` has, if it exists.
 
