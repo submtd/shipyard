@@ -116,4 +116,50 @@ NODE_PACKAGE_MANAGERS: dict[str, PackageManager] = {
         install=("npm", "ci"),
         test=("npm", "test"),
     ),
+    "pnpm": PackageManager(
+        id="pnpm",
+        lockfiles=("pnpm-lock.yaml",),
+        install=("pnpm", "install", "--frozen-lockfile"),
+        test=("pnpm", "test"),
+        # pnpm does not ship with node, so the runner has to install it.
+        setup_steps=(Step(
+            uses="pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271",
+            uses_version="v6.0.9",
+        ),),
+    ),
+    # Yarn 1 and Yarn 2+ are two toolchains sharing one lockfile name, and
+    # their install flags are mutually incompatible: --frozen-lockfile is an
+    # error on berry, --immutable is an error on classic. They are separate
+    # registry entries because they are separate tools, not one tool with a
+    # version field -- a single entry would need a conditional in the
+    # renderer, which is exactly the drift this registry exists to prevent.
+    "yarn1": PackageManager(
+        id="yarn1",
+        lockfiles=("yarn.lock",),
+        install=("yarn", "install", "--frozen-lockfile"),
+        test=("yarn", "test"),
+    ),
+    "yarn-berry": PackageManager(
+        id="yarn-berry",
+        lockfiles=("yarn.lock",),
+        install=("yarn", "install", "--immutable"),
+        test=("yarn", "test"),
+    ),
+    "bun": PackageManager(
+        id="bun",
+        # bun has shipped two lockfile names: the original binary `bun.lockb`
+        # and the newer text `bun.lock`. A repo may carry either depending on
+        # when, and with which bun, it was last installed.
+        lockfiles=("bun.lockb", "bun.lock"),
+        install=("bun", "install", "--frozen-lockfile"),
+        # `bun run test` rather than `bun test`: the latter runs bun's own
+        # test runner, while every other entry here runs the repo's `test`
+        # script. A repo using vitest under bun would otherwise silently run
+        # a different suite than it does locally.
+        test=("bun", "run", "test"),
+        setup_steps=(Step(
+            uses="oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+            uses_version="v2.2.0",
+        ),),
+    ),
 }

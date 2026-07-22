@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from rigging.config import Config, StackConfig, load_config
 from rigging import stacks
 from rigging.plan import CHECKOUT_STEP, build_plan
@@ -229,3 +231,43 @@ def test_the_python_stack_bounds_its_pytest_version():
                                     push_branches=("main",))))
     assert "pip install pytest\n" not in text, "the bare, unbounded install"
     assert "pytest>=8,<9" in text
+
+
+@pytest.mark.parametrize("manager,golden", [
+    ("pnpm", "node-pnpm.yml"),
+    ("yarn1", "node-yarn1.yml"),
+    ("yarn-berry", "node-yarn-berry.yml"),
+    ("bun", "node-bun.yml"),
+])
+def test_each_manager_matches_its_golden(tmp_path, manager, golden):
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": manager}}}))
+    assert render(build_plan(cfg)) == read_golden(golden)
+
+
+def test_npm_goldens_did_not_move(tmp_path):
+    """Adding four managers must not perturb the one that already worked."""
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {}}}))
+    assert render(build_plan(cfg)) == read_golden("node.yml")
+
+
+def test_yarn_majors_render_incompatible_flags(tmp_path):
+    """The whole reason they are separate entries. If these two ever render
+    the same install line, one of them is broken."""
+    def install_line(manager):
+        cfg = load_config(write(tmp_path, {
+            "stacks": {"node": {"packageManager": manager}}}))
+        return [l for l in render(build_plan(cfg)).splitlines()
+                if "yarn install" in l][0]
+
+    assert "--frozen-lockfile" in install_line("yarn1")
+    assert "--immutable" in install_line("yarn-berry")
+
+
+def test_manager_setup_runs_before_setup_node(tmp_path):
+    """pnpm and bun install the manager itself; doing that after setup-node
+    would work today but breaks the moment dependency caching is added."""
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": "pnpm"}}}))
+    out = render(build_plan(cfg))
+    assert out.index("pnpm/action-setup") < out.index("actions/setup-node")
