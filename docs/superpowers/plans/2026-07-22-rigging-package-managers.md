@@ -424,12 +424,25 @@ def test_package_manager_defaults_to_none(tmp_path):
 
 
 def test_package_manager_is_read(tmp_path):
+    """An explicitly configured manager is carried through, and is
+    distinguishable from the unset case above. Uses "npm" because it is the
+    only registered manager at this point in the plan -- a later task adds
+    pnpm/yarn/bun and covers them in the golden tests."""
     cfg = load_config(write(tmp_path, {
-        "stacks": {"node": {"packageManager": "pnpm"}}}))
-    assert cfg.stacks["node"].package_manager == "pnpm"
+        "stacks": {"node": {"packageManager": "npm"}}}))
+    assert cfg.stacks["node"].package_manager == "npm"
 
 
-@pytest.mark.parametrize("bad", ["npm7", "", "NPM", 5, ["npm"], None])
+def test_explicit_null_package_manager_means_unset(tmp_path):
+    """`dict.get` cannot distinguish an absent key from one set to null, and
+    this codebase already treats an explicit null as "unset" elsewhere (see
+    bosun's targetBranch). Pinned so the two spellings cannot drift apart."""
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"packageManager": None}}}))
+    assert cfg.stacks["node"].package_manager is None
+
+
+@pytest.mark.parametrize("bad", ["npm7", "", "NPM", 5, ["npm"], {"a": 1}])
 def test_unknown_package_manager_raises_naming_the_field(tmp_path, bad):
     with pytest.raises(ConfigError) as e:
         load_config(write(tmp_path, {
@@ -505,6 +518,14 @@ def _valid_package_manager(value, stack_id):
     """
     if value is None:
         return None
+    # isinstance BEFORE the membership test: an unhashable value (a list, a
+    # dict) raises TypeError out of `in` on a dict, and the contract here is
+    # that bad config raises ConfigError naming the field.
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'stacks.{stack_id}.packageManager' must be a "
+            f"string (got {value!r})."
+        )
     if stack_id != "node":
         raise ConfigError(
             f"{CONFIG_NAME}: 'stacks.{stack_id}.packageManager' is set, but "
@@ -545,7 +566,7 @@ def build_plan(cfg: config.Config) -> CiPlan:
 
 Run: `python3 -m pytest -q`
 
-Expected: `1374 passed` (1364 + 10 new; the parametrized test contributes 6). Goldens unchanged — no config in the repo sets the new key.
+Expected: 11 new tests pass (the parametrized bad-value test contributes 6), and the known-red diff described in your dispatch stays empty. Goldens unchanged — no config in this repo sets the new key.
 
 - [ ] **Step 6: Commit**
 
