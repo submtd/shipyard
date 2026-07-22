@@ -134,15 +134,25 @@ target the cross product will pair it with against a *present* stack/scanner:
   manager concept (python) while that stack is in the `stacks` subset, so the
   break-#3 combo is generated. A separate sample supplies a **list** (unhashable
   / wrong-type) value to force the break-#2 path.
-- **keel:** `integration` is crossed with both topologies (`has_develop`
-  true/false); `require_changelog` and every enum are exercised.
-- **bosun:** `intervals` samples include a valid ecosystem id and an interval
-  value; the harness crosses them against the detected-ecosystems dimension.
+- **bosun:** `intervals` samples include a bogus ecosystem id and a bad interval
+  value, crossed against the detected-ecosystems dimension.
 
-This constraint is the spec's central risk. It is not self-checking from the
-happy path — a plugin author could declare only valid samples and get a green
-test that catches nothing. The meta-verification below exists precisely to
-prove each plugin's `SIGNAL_SPACE` has teeth.
+**Two plugins have no invalid-target interaction by construction, and this
+constraint does not apply to them:** `keel` and `stow`. keel's only conditional
+key (`integration`) is *silently ignored* under trunk rather than rejected, and
+its enums are registry-sourced (propose and load read the same tuple, so they
+cannot drift); stow has a single key and no interaction at all. Their property
+tests are therefore coverage-and-registry guards, not interaction-drift
+catchers — every committed sample is valid, and a weakened validator in those
+two is caught only by the meta-verification's throwaway invalid sample, not by
+the committed suite. The in-code `SIGNAL_SPACE` comment in each says so, so a
+green test is not mistaken for teeth it does not have.
+
+This constraint is the spec's central risk *for the plugins that have an
+interaction key* (hull, rigging, bosun, ballast). It is not self-checking from
+the happy path — a plugin author could declare only valid samples and get a
+green test that catches nothing. The meta-verification below exists precisely to
+prove each such plugin's `SIGNAL_SPACE` has teeth.
 
 ## Relationship to existing tests
 

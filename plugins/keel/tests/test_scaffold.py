@@ -40,6 +40,15 @@ def _assert_round_trips(tmp_path, signals, index):
     )
 
 
+# keel has no invalid-target interaction by construction: its one conditional
+# key, `integration`, is silently ignored under trunk (has_develop False) rather
+# than rejected, and every enum sample is registry-sourced (so propose and load
+# cannot drift). Every combo here is therefore VALID -- this test is a coverage
+# guard (SIGNAL_SPACE must cover SIGNAL_KEYS) and a registry-sourcing check, NOT
+# an interaction-drift catcher. A weakened enum validator is caught only by the
+# meta-verification's throwaway invalid sample (see the plan's Task 3 Step 4),
+# which is deliberately not committed. Do not read this green test as proof that
+# keel rejects bad interactions -- it has none to reject.
 SIGNAL_SPACE = {
     "has_develop": (True, False),                # required: no ABSENT (propose_config does signals["has_develop"])
     "production": (ABSENT, "main"),

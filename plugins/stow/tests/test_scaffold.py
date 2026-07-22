@@ -39,6 +39,11 @@ def _assert_round_trips(tmp_path, signals, index):
     )
 
 
+# stow has a single signal key and no interaction, so every combo here is VALID.
+# This test is a coverage guard (SIGNAL_SPACE must cover SIGNAL_KEYS), not an
+# interaction-drift catcher -- it locks the propose->load contract before stow
+# grows a second key. Do not read its green status as proof stow rejects bad
+# interactions; it has none to reject.
 SIGNAL_SPACE = {
     "stacks": ((), ("python",), ("node",), ("python", "node")),  # empty is base-only, allowed
 }
