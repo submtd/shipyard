@@ -289,3 +289,29 @@ def test_end_to_end_polyglot_pnpm_repo_scaffolds_python_only(tmp_path):
     reasons = unsupported_reasons(tmp_path)
     cfg = propose_config({"stacks": ["python"], "unsupported": reasons})
     assert cfg["stacks"] == {"python": {}}
+
+
+def test_package_managers_signal_reaches_the_config(tmp_path):
+    from rigging.config import load_config
+
+    cfg = propose_config({"stacks": ["node"],
+                          "packageManagers": {"node": "pnpm"}})
+    assert cfg["stacks"]["node"]["packageManager"] == "pnpm"
+    (tmp_path / ".rigging.json").write_text(json.dumps(cfg))
+    assert load_config(tmp_path).stacks["node"].package_manager == "pnpm"
+
+
+def test_absent_package_managers_signal_omits_the_key():
+    assert propose_config({"stacks": ["node"]})["stacks"]["node"] == {}
+
+
+def test_unknown_manager_in_the_signal_is_rejected():
+    with pytest.raises(ValueError, match="packageManagers"):
+        propose_config({"stacks": ["node"], "packageManagers": {"node": "npm7"}})
+
+
+def test_manager_for_a_stack_not_being_proposed_is_rejected():
+    """A signal naming a stack that is not in `stacks` is a caller mistake,
+    and dropping it silently would leave nothing on disk to notice by."""
+    with pytest.raises(ValueError, match="packageManagers"):
+        propose_config({"stacks": ["python"], "packageManagers": {"node": "pnpm"}})

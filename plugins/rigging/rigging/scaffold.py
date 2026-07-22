@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rigging.config import BRANCH_RE, NAME_RE, VERSION_RE
-from rigging.stacks import STACK_IDS
+from rigging.stacks import NODE_PACKAGE_MANAGERS, STACK_IDS
 
 
 def _valid_push_branches(signals):
@@ -41,7 +41,8 @@ def _valid_push_branches(signals):
 #: takes a default instead. That is the same reasoning the config loaders
 #: already apply to unknown FILE keys -- and it matters more here, because a
 #: dropped signal leaves nothing on disk to inspect afterwards.
-SIGNAL_KEYS = frozenset({"name", "stacks", "versions", "pushBranches", "unsupported"})
+SIGNAL_KEYS = frozenset({"name", "stacks", "versions", "pushBranches",
+                         "unsupported", "packageManagers"})
 
 
 def _valid_unsupported(signals):
@@ -74,6 +75,37 @@ def _valid_unsupported(signals):
                 f"to a non-empty reason string (got {stack_id!r}: {reason!r})."
             )
     return unsupported
+
+
+def _valid_package_managers(signals, stack_ids):
+    """Validate the optional `packageManagers` signal.
+
+    A mapping of stack id -> manager id, normally `detect.node_package_manager`'s
+    answer. A manager named for a stack that is not being proposed is a caller
+    mistake rather than something to drop: a dropped signal here means the
+    scaffolded repo silently gets the default manager, and the resulting red
+    install step surfaces far from its cause.
+    """
+    managers = signals.get("packageManagers")
+    if managers is None:
+        return {}
+    if not isinstance(managers, dict):
+        raise ValueError(
+            f"signals['packageManagers'] must be a dict of stack id -> "
+            f"manager id (got {managers!r})."
+        )
+    for stack_id, manager_id in managers.items():
+        if stack_id not in stack_ids:
+            raise ValueError(
+                f"signals['packageManagers'] names stack {stack_id!r}, which "
+                f"is not in signals['stacks']."
+            )
+        if manager_id not in NODE_PACKAGE_MANAGERS:
+            raise ValueError(
+                f"signals['packageManagers'][{stack_id!r}] must be one of "
+                f"{', '.join(NODE_PACKAGE_MANAGERS)} (got {manager_id!r})."
+            )
+    return managers
 
 
 def _reject_unknown_signals(signals):
@@ -135,6 +167,8 @@ def propose_config(signals):
             f"version strings (got {versions_by_id!r})."
         )
 
+    package_managers = _valid_package_managers(signals, set(stack_ids))
+
     stacks_out = {}
     for stack_id in stack_ids:
         if stack_id not in STACK_IDS:
@@ -154,6 +188,7 @@ def propose_config(signals):
                 f"{unsupported[stack_id]}"
             )
         versions = versions_by_id.get(stack_id)
+        entry = {}
         if versions:
             for version in versions:
                 if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
@@ -162,9 +197,10 @@ def propose_config(signals):
                         f"non-empty strings matching {VERSION_RE.pattern} "
                         f"(got {version!r})."
                     )
-            stacks_out[stack_id] = {"versions": list(versions)}
-        else:
-            stacks_out[stack_id] = {}
+            entry["versions"] = list(versions)
+        if stack_id in package_managers:
+            entry["packageManager"] = package_managers[stack_id]
+        stacks_out[stack_id] = entry
 
     out = {"name": name, "stacks": stacks_out}
     push_branches = _valid_push_branches(signals)

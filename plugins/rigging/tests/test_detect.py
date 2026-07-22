@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from rigging.detect import detect_stacks
@@ -42,39 +44,45 @@ def test_a_directory_named_like_a_marker_detects_nothing(tmp_path):
     assert detect_stacks(tmp_path) == ()
 
 
-# --- unsupported JS toolchains (issue #24) --------------------------------
+# --- JS package manager selection (issue #24 / #26) -----------------------
 #
 # Every pnpm/yarn/bun repo has a package.json, so every one of them detected
-# as "node" and was handed an `npm ci` workflow that died on its first step.
-# Detection still reports node; the reason is surfaced separately, and the
-# init skill is what stops on it.
+# as "node". Rigging used to refuse all of them; now it selects the manager
+# that is actually in charge and only refuses when the choice would be a
+# guess (see the node_package_manager tests further down). These two remain
+# genuinely refused because neither declares the information their setup
+# action needs; bun needs no such declaration, so it is no longer among them.
 
 from rigging.detect import unsupported_reasons
 
 
 @pytest.mark.parametrize(
-    "lockfile,manager",
+    "lockfile,marker",
     [
-        ("pnpm-lock.yaml", "pnpm"),
-        ("yarn.lock", "yarn"),
-        ("bun.lockb", "bun"),
-        ("bun.lock", "bun"),
+        ("pnpm-lock.yaml", "pnpm-lock.yaml"),
+        ("yarn.lock", "yarn.lock"),
     ],
 )
-def test_foreign_lockfile_makes_node_unsupported(tmp_path, lockfile, manager):
+def test_foreign_lockfile_without_declared_version_makes_node_unsupported(tmp_path, lockfile, marker):
     (tmp_path / "package.json").write_text("{}")
     (tmp_path / lockfile).write_text("")
     reasons = unsupported_reasons(tmp_path)
     assert set(reasons) == {"node"}
     reason = reasons["node"]
     # The reason has to be actionable on its own: it is the only diagnosis
-    # the user sees, so it must name the marker, the manager it implies, the
-    # steps that cannot work, and the refusal itself.
-    assert lockfile in reason
-    assert manager in reason
-    assert "npm ci" in reason
-    assert "npm test" in reason
-    assert "will not scaffold a workflow that cannot pass" in reason
+    # the user sees, so it must name the marker and what to declare.
+    assert marker in reason
+    assert "packageManager" in reason
+
+
+@pytest.mark.parametrize("lockfile", ["bun.lockb", "bun.lock"])
+def test_bun_lockfile_alone_is_supported(tmp_path, lockfile):
+    """bun needs no `packageManager` declaration the way pnpm/yarn do, so a
+    bare bun lockfile is enough to select it -- unlike its pnpm/yarn
+    siblings above, this is no longer a refusal."""
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / lockfile).write_text("")
+    assert unsupported_reasons(tmp_path) == {}
 
 
 def test_node_still_detected_even_when_unsupported(tmp_path):
@@ -85,12 +93,11 @@ def test_node_still_detected_even_when_unsupported(tmp_path):
     assert detect_stacks(tmp_path) == ("node",)
 
 
-def test_package_manager_field_naming_pnpm_makes_node_unsupported(tmp_path):
+def test_package_manager_field_naming_pnpm_is_supported(tmp_path):
+    """A declared `packageManager` naming pnpm is exactly what pnpm/action-setup
+    needs -- this used to be refused; it is now the positive case."""
     (tmp_path / "package.json").write_text('{"packageManager": "pnpm@9.12.0"}')
-    reasons = unsupported_reasons(tmp_path)
-    assert set(reasons) == {"node"}
-    assert "packageManager" in reasons["node"]
-    assert "pnpm" in reasons["node"]
+    assert unsupported_reasons(tmp_path) == {}
 
 
 def test_package_manager_field_naming_npm_does_not_fire(tmp_path):
@@ -166,3 +173,108 @@ def test_empty_repo_reports_nothing(tmp_path):
 
 def test_returns_a_dict(tmp_path):
     assert isinstance(unsupported_reasons(tmp_path), dict)
+
+
+# --- node_package_manager selection (issue #26) ---------------------------
+
+from rigging.detect import node_package_manager
+
+
+@pytest.mark.parametrize("lockfile,expected", [
+    ("package-lock.json", "npm"),
+    # pnpm is deliberately absent here: it needs a declared version too, and
+    # has its own pair of tests below.
+    ("bun.lockb", "bun"),
+    ("bun.lock", "bun"),
+])
+def test_lockfile_selects_the_manager(tmp_path, lockfile, expected):
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / lockfile).write_text("")
+    assert node_package_manager(tmp_path) == (expected, None)
+
+
+def test_bare_package_json_is_npm(tmp_path):
+    """npm ships with node, so no other manager's marker IS the signal."""
+    (tmp_path / "package.json").write_text("{}")
+    assert node_package_manager(tmp_path) == ("npm", None)
+
+
+def test_package_manager_field_selects_when_no_lockfile(tmp_path):
+    (tmp_path / "package.json").write_text('{"packageManager": "pnpm@9.12.0"}')
+    assert node_package_manager(tmp_path) == ("pnpm", None)
+
+
+@pytest.mark.parametrize("declared,expected", [
+    ("yarn@1.22.19", "yarn1"),
+    ("yarn@3.6.4", "yarn-berry"),
+    ("yarn@4.0.0", "yarn-berry"),
+])
+def test_yarn_major_selects_the_toolchain(tmp_path, declared, expected):
+    (tmp_path / "package.json").write_text(json.dumps({"packageManager": declared}))
+    (tmp_path / "yarn.lock").write_text("")
+    assert node_package_manager(tmp_path) == (expected, None)
+
+
+def test_yarn_lockfile_without_a_declared_major_is_refused(tmp_path):
+    """Yarn 1 takes --frozen-lockfile and berry takes --immutable; each is an
+    error on the other. yarn.lock does not say which, and guessing produces a
+    workflow that dies on its install step -- the exact outcome the refusal
+    machinery exists to prevent."""
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "yarn.lock").write_text("")
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "yarn.lock" in reason
+    assert "packageManager" in reason
+
+
+def test_pnpm_without_a_declared_version_is_refused(tmp_path):
+    """pnpm/action-setup reads its version from package.json's
+    `packageManager` field and errors when that field is absent and no
+    version is pinned. Selecting pnpm off the lockfile alone would render a
+    job that dies on its setup step -- the exact failure this module exists
+    to prevent."""
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "packageManager" in reason
+    assert "pnpm-lock.yaml" in reason
+
+
+def test_pnpm_with_a_declared_version_is_selected(tmp_path):
+    """The field the refusal above asks for is exactly what makes it work."""
+    (tmp_path / "package.json").write_text('{"packageManager": "pnpm@9.12.0"}')
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    assert node_package_manager(tmp_path) == ("pnpm", None)
+
+
+def test_two_manager_lockfiles_are_refused_naming_both(tmp_path):
+    """Mid-migration or a stale file. Either answer is as likely wrong as
+    right, so precedence would be a coin flip wearing a rule's clothing."""
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    (tmp_path / "yarn.lock").write_text("")
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "pnpm-lock.yaml" in reason and "yarn.lock" in reason
+
+
+def test_lockfile_disagreeing_with_declared_manager_is_refused(tmp_path):
+    (tmp_path / "package.json").write_text('{"packageManager": "pnpm@9.12.0"}')
+    (tmp_path / "yarn.lock").write_text("")
+    manager, reason = node_package_manager(tmp_path)
+    assert manager is None
+    assert "pnpm" in reason and "yarn.lock" in reason
+
+
+def test_unparseable_package_json_is_not_a_refusal(tmp_path):
+    """A package.json we cannot read is not evidence of anything. With a
+    lockfile present the lockfile still decides."""
+    (tmp_path / "package.json").write_text("{ not json")
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    assert node_package_manager(tmp_path) == ("pnpm", None)
+
+
+def test_no_package_json_reports_nothing(tmp_path):
+    assert node_package_manager(tmp_path) == (None, None)
