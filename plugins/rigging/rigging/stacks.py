@@ -152,10 +152,17 @@ NODE_PACKAGE_MANAGERS: dict[str, PackageManager] = {
         test=("yarn", "test"),
         # GitHub's runners ship Yarn 1.22.x, and `--immutable` is a Yarn 2+
         # flag that classic does not understand -- so without this step the
-        # rendered job fails on its install line every run. Corepack ships
-        # with node and reads the `packageManager` field to pick the yarn
-        # version, which detection has already proved is present: yarn-berry
-        # is only ever selected BECAUSE that field declared yarn@2 or later.
+        # rendered job fails on its install line every run. `corepack
+        # enable` just shims yarn; Corepack then resolves the actual
+        # version from package.json's `packageManager` field at install
+        # time. A later increment's detection will only ever select
+        # yarn-berry when that field declares yarn@2+, so the scaffolded
+        # path is sound. A hand-written .rigging.json is not held to that:
+        # rigging does not cross-check config against the repo's own files
+        # (the same way it never checks that a configured Node version
+        # exists), so a config that names yarn-berry against a repo with no
+        # such field, or one declaring classic, renders a workflow that
+        # matches the config, not the repo.
         post_setup_steps=(Step(run="corepack enable"),),
     ),
     "bun": PackageManager(

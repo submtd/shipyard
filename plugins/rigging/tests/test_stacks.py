@@ -195,13 +195,21 @@ def test_every_manager_setup_step_is_sha_pinned():
 
 
 def test_no_manager_command_embeds_an_expression():
-    """Registry commands become `run:` lines. An expression here would be
-    interpolated by Actions before any shell saw it."""
+    """Registry commands become `run:` lines, as do setup_steps and
+    post_setup_steps -- yarn-berry's `corepack enable` is the first entry to
+    carry one. An expression anywhere in these would be interpolated by
+    Actions before any shell saw it, so every install/test argv element and
+    every step's run body and uses ref must be checked."""
     from rigging.stacks import NODE_PACKAGE_MANAGERS
 
     for manager in NODE_PACKAGE_MANAGERS.values():
         for part in manager.install + manager.test:
             assert "${{" not in part
+        for step in manager.setup_steps + manager.post_setup_steps:
+            if step.run is not None:
+                assert "${{" not in step.run
+            if step.uses is not None:
+                assert "${{" not in step.uses
 
 
 def test_bun_runs_the_repos_test_script_not_buns_runner():
