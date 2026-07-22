@@ -316,7 +316,7 @@ In `plugins/hull/hull/scanners.py`, add to `REGISTRY` after the `gitleaks` entry
 
 Run: `python3 -m pytest -q`
 
-Expected: `1345 passed`. If `security.yml` or `security-license.yml` fails, stop — gitleaks output moved and something is wrong.
+Expected: `1346 passed`. If `security.yml` or `security-license.yml` fails, stop — gitleaks output moved and something is wrong.
 
 - [ ] **Step 6: Commit**
 
@@ -446,7 +446,7 @@ def test_license_secret_rejected_for_a_scanner_with_no_license_gate(tmp_path):
 
 Run: `python3 -m pytest -q`
 
-Expected: `1347 passed`.
+Expected: `1348 passed`.
 
 - [ ] **Step 6: Commit**
 
@@ -536,7 +536,7 @@ In `plugins/hull/hull/scaffold.py`, inside `check_preconditions`, after the exis
 
 Run: `python3 -m pytest -q`
 
-Expected: `1350 passed`.
+Expected: `1351 passed`.
 
 - [ ] **Step 5: Commit**
 
@@ -634,7 +634,7 @@ Under `## [Unreleased]` in `CHANGELOG.md`:
 
 Run: `python3 -m pytest -q`
 
-Expected: `1350 passed` (documentation only — no test count change).
+Expected: `1351 passed` (documentation only — no test count change).
 
 ```bash
 git add plugins/hull/skills/init/SKILL.md CHANGELOG.md
@@ -647,7 +647,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ## Final verification
 
-- [ ] `python3 -m pytest -q` → `1350 passed`
+- [ ] `python3 -m pytest -q` → `1351 passed`
 - [ ] `git diff main --stat -- plugins/hull/tests/golden/security.yml plugins/hull/tests/golden/security-license.yml` → **empty output**. The single most important check in this plan: gitleaks' rendered output must be untouched.
 - [ ] Confirm engine purity held: `grep -nE "^(import|from) (os|subprocess|socket|urllib|requests)" plugins/hull/hull/*.py` → no matches.
 - [ ] Open the PR with `keel:finish-work`.
