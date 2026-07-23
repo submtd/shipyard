@@ -39,6 +39,12 @@ class StackSpec:
     setup_with_key: str
     default_versions: tuple[str, ...]
     steps: tuple[Step, ...]
+    #: The stack's OWN default test argv, appended as the final job step when
+    #: no packageManager supplies one and no testCommand overrides it. Stored
+    #: as argv (not a Step) so it shares render_argv with a user's testCommand
+    #: and with the node managers' `test`. Empty for node, whose test comes
+    #: from its package manager instead.
+    default_test: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -85,8 +91,8 @@ REGISTRY: dict[str, StackSpec] = {
                 "pip install 'pytest>=8,<9'\n"
                 "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
             )),
-            Step(run="python -m pytest"),
         ),
+        default_test=("python", "-m", "pytest"),
     ),
     "node": StackSpec(
         id="node",
@@ -97,6 +103,7 @@ REGISTRY: dict[str, StackSpec] = {
         setup_with_key="node-version",
         default_versions=("20",),
         steps=(),
+        default_test=(),  # node's default test comes from its package manager
     ),
 }
 

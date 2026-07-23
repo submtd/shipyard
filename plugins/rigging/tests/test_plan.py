@@ -28,8 +28,11 @@ def test_python_job_steps_in_order():
 
     # The install step's exact body is pinned by rigging.stacks's own tests
     # (test_stacks.py); here we only need it to match the registry, since a
-    # job's steps are the registry's steps plus checkout/setup wrapping.
-    install_step, test_step = stacks.REGISTRY["python"].steps
+    # job's steps are the registry's steps plus checkout/setup wrapping. The
+    # test step no longer lives on steps -- it is resolved from
+    # default_test (see test_stacks.py's default_test tests).
+    (install_step,) = stacks.REGISTRY["python"].steps
+    test_step = stacks.Step(run=plan.render_argv(stacks.REGISTRY["python"].default_test))
 
     assert job.steps == (
         plan.CHECKOUT_STEP,

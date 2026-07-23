@@ -51,23 +51,32 @@ def render_argv(argv: tuple[str, ...]) -> str:
 
 
 def _manager_steps(stack_id: str, manager_id: str):
-    """The setup and run steps contributed by a stack's package manager.
-
-    Returns `((), (), ())` for a stack that has no manager concept -- today
-    every stack but node.
+    """The setup, post-setup, and INSTALL steps a stack's package manager
+    contributes. The test step is resolved separately (see _resolve_test_argv)
+    so a testCommand can override it. Returns ((), (), ()) for a stack with no
+    manager concept -- today every stack but node.
     """
     if stack_id != "node":
         return (), (), ()
     manager = stacks.NODE_PACKAGE_MANAGERS[manager_id]
-    runs = (
-        stacks.Step(run=render_argv(manager.install)),
-        stacks.Step(run=render_argv(manager.test)),
-    )
-    return manager.setup_steps, manager.post_setup_steps, runs
+    install_run = (stacks.Step(run=render_argv(manager.install)),)
+    return manager.setup_steps, manager.post_setup_steps, install_run
+
+
+def _resolve_test_argv(stack_id: str, manager_id: str,
+                       test_command: tuple[str, ...] | None) -> tuple[str, ...]:
+    """The effective test argv for a job: an explicit testCommand wins; else
+    the node manager's default; else the stack's own default_test."""
+    if test_command is not None:
+        return test_command
+    if stack_id == "node":
+        return stacks.NODE_PACKAGE_MANAGERS[manager_id].test
+    return stacks.REGISTRY[stack_id].default_test
 
 
 def _build_job(stack_id: str, versions: tuple[str, ...],
-               manager_id: str = stacks.DEFAULT_NODE_PACKAGE_MANAGER) -> Job:
+               manager_id: str = stacks.DEFAULT_NODE_PACKAGE_MANAGER,
+               test_command: tuple[str, ...] | None = None) -> Job:
     spec = stacks.REGISTRY[stack_id]
     setup_step = stacks.Step(
         uses=spec.setup_uses,
@@ -78,7 +87,9 @@ def _build_job(stack_id: str, versions: tuple[str, ...],
     # documented order. Nothing here depends on it today (no dependency
     # caching is configured), but the documented order is the one that stays
     # correct if caching is ever added.
-    manager_setup, manager_post_setup, manager_runs = _manager_steps(stack_id, manager_id)
+    manager_setup, manager_post_setup, manager_install = _manager_steps(stack_id, manager_id)
+    test_step = stacks.Step(
+        run=render_argv(_resolve_test_argv(stack_id, manager_id, test_command)))
     return Job(
         id=spec.id,
         runs_on="ubuntu-latest",
@@ -86,7 +97,7 @@ def _build_job(stack_id: str, versions: tuple[str, ...],
         versions=versions,
         steps=(
             CHECKOUT_STEP, *manager_setup, setup_step,
-            *manager_post_setup, *spec.steps, *manager_runs,
+            *manager_post_setup, *spec.steps, *manager_install, test_step,
         ),
     )
 
@@ -94,7 +105,8 @@ def _build_job(stack_id: str, versions: tuple[str, ...],
 def build_plan(cfg: config.Config) -> CiPlan:
     jobs = tuple(
         _build_job(stack_id, stack_cfg.versions,
-                   stack_cfg.package_manager or stacks.DEFAULT_NODE_PACKAGE_MANAGER)
+                   stack_cfg.package_manager or stacks.DEFAULT_NODE_PACKAGE_MANAGER,
+                   stack_cfg.test_command)
         for stack_id, stack_cfg in cfg.stacks.items()
     )
     return CiPlan(name=cfg.name, jobs=jobs, push_branches=cfg.push_branches)

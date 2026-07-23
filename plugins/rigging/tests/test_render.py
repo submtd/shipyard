@@ -289,3 +289,31 @@ def test_other_managers_gained_no_post_setup_step(tmp_path):
         cfg = load_config(write(tmp_path, {
             "stacks": {"node": {"packageManager": manager}}}))
         assert "corepack" not in render(build_plan(cfg))
+
+
+@pytest.mark.parametrize("data,golden", [
+    ({"stacks": {"node": {"testCommand": ["turbo", "run", "test", "--concurrency=1"]}}},
+     "node-testcommand.yml"),
+    ({"stacks": {"python": {"testCommand": ["pytest", "-q"]}}},
+     "python-testcommand.yml"),
+])
+def test_test_command_matches_its_golden(tmp_path, data, golden):
+    cfg = load_config(write(tmp_path, data))
+    assert render(build_plan(cfg)) == read_golden(golden)
+
+
+def test_test_command_replaces_only_the_test_step_not_install(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"testCommand": ["turbo", "run", "test"]}}}))
+    blocks = iter_run_blocks(render(build_plan(cfg)))
+    assert blocks == ["npm ci", "turbo run test"]  # install default, test overridden
+
+
+def test_existing_goldens_unchanged_after_refactor(tmp_path):
+    # The whole point of the refactor: repos not using testCommand see no change.
+    for data, golden in [
+        ({"stacks": {"python": {"versions": ["3.9", "3.12"]}}}, "python.yml"),
+        ({"stacks": {"node": {"versions": ["20"]}}}, "node.yml"),
+    ]:
+        cfg = load_config(write(tmp_path, {"name": "ci", **data}))
+        assert render(build_plan(cfg)) == read_golden(golden)

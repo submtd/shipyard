@@ -71,7 +71,10 @@ def test_python_spec_contents():
     assert spec.matrix_var == "python"
     assert spec.setup_with_key == "python-version"
     assert spec.default_versions == ("3.12",)
-    assert spec.steps == (Step(run=PYTHON_INSTALL_RUN), Step(run="python -m pytest"))
+    # pytest moved off steps and onto default_test (see
+    # test_python_steps_no_longer_carry_the_test_step / test_python_default_test_is_pytest).
+    assert spec.steps == (Step(run=PYTHON_INSTALL_RUN),)
+    assert spec.default_test == ("python", "-m", "pytest")
 
 
 def test_python_install_step_matches_github_starter_workflow_shape():
@@ -111,6 +114,23 @@ def test_stackspec_is_frozen_dataclass():
     spec = REGISTRY["python"]
     with pytest.raises(Exception):
         spec.id = "changed"
+
+
+def test_python_default_test_is_pytest():
+    assert stacks.REGISTRY["python"].default_test == ("python", "-m", "pytest")
+
+
+def test_node_has_no_stack_default_test():
+    # node's default test comes from its package manager, not the stack.
+    assert stacks.REGISTRY["node"].default_test == ()
+
+
+def test_python_steps_no_longer_carry_the_test_step():
+    # pytest moved to default_test; steps is install-only now. Check for the
+    # test INVOCATION ("python -m pytest"), not the bare word "pytest" -- the
+    # install step legitimately contains "pip install 'pytest>=8,<9'".
+    runs = [s.run for s in stacks.REGISTRY["python"].steps if s.run]
+    assert not any("python -m pytest" in r for r in runs)
 
 
 # --- action refs must be SHA pins ----------------------------------------
