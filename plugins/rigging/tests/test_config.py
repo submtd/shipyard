@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from rigging.config import Config, ConfigError, load_config
+from rigging.config import Config, ConfigError, ResolvedService, load_config
 from rigging.stacks import REGISTRY
 
 
@@ -355,3 +355,73 @@ def test_shell_metacharacters_are_allowed_and_kept_literal(tmp_path):
         "stacks": {"node": {"testCommand": ["sh", "-c", "echo hi; echo bye"]}}
     }))
     assert cfg.stacks["node"].test_command == ("sh", "-c", "echo hi; echo bye")
+
+
+# --- services ----------------------------------------------------------
+
+
+def test_services_resolve_to_tuple_of_resolved_services(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"services": {
+            "postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL"}}}}
+    }))
+    assert cfg.stacks["node"].services == (
+        ResolvedService(service_id="postgres", version="16",
+                        url_env="TEST_DATABASE_URL"),
+    )
+
+
+def test_services_absent_is_empty_tuple(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {}}}))
+    assert cfg.stacks["node"].services == ()
+
+
+def test_unknown_service_id_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": {
+            "cassandra": {"version": "5", "urlEnv": "DB_URL"}}}}}))
+    msg = str(e.value)
+    assert "cassandra" in msg and "postgres" in msg  # names the bad id and the allowed set
+
+
+def test_service_missing_version_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": {
+            "postgres": {"urlEnv": "DB_URL"}}}}}))
+    assert "version" in str(e.value)
+
+
+def test_service_missing_url_env_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": {
+            "postgres": {"version": "16"}}}}}))
+    assert "urlEnv" in str(e.value)
+
+
+@pytest.mark.parametrize("bad_env", ["1DB", "DB URL", "DB-URL", "${{x}}", ""])
+def test_bad_url_env_rejected(tmp_path, bad_env):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": {
+            "postgres": {"version": "16", "urlEnv": bad_env}}}}}))
+    assert "urlEnv" in str(e.value)
+
+
+@pytest.mark.parametrize("bad_version", ["16 rc", "1.0}}", "${{ x }}", "a b"])
+def test_bad_service_version_rejected(tmp_path, bad_version):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": {
+            "postgres": {"version": bad_version, "urlEnv": "DB_URL"}}}}}))
+    assert "version" in str(e.value)
+
+
+def test_unknown_key_inside_a_service_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": {
+            "postgres": {"version": "16", "urlEnv": "DB_URL", "port": 5432}}}}}))
+    assert "port" in str(e.value)
+
+
+def test_services_not_a_dict_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": ["postgres"]}}}))
+    assert "services" in str(e.value)
