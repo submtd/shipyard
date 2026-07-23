@@ -33,6 +33,13 @@ URL_ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 #: Actions expression is refused before render.
 SERVICE_VERSION_RE = VERSION_RE
 
+#: A service database name the repo may choose. Letters, digits, underscore and
+#: hyphen only -- safe both as a URL path segment and inside a double-quoted
+#: YAML scalar, and narrow enough to refuse whitespace, quotes, and `${{` (none
+#: of those characters are in the class), so a chosen name can never need YAML
+#: quoting or smuggle an Actions expression into the rendered URL/env.
+SERVICE_DATABASE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
 #: The literal that opens a GitHub Actions expression. A testCommand element
 #: containing it is rejected at load: GitHub substitutes `${{ ... }}` at the
 #: YAML layer, before any shell sees the line, so shlex.quote is no defence --
@@ -63,11 +70,17 @@ BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 @dataclass(frozen=True)
 class ResolvedService:
     """One service a stack's job runs: which registry service, at what image
-    version, and the env var its connection URL is exposed in."""
+    version, the env var its connection URL is exposed in, and optionally the
+    database name to create and connect to (None takes the service's default)."""
 
     service_id: str
     version: str
     url_env: str
+    #: The database name, or None to take the service's registry default. Only
+    #: meaningful for a service with a database concept (postgres, mysql);
+    #: rejected at load for one without (redis). None is the default so an
+    #: omitted `database` reproduces the pre-existing rendered bytes exactly.
+    database: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -212,7 +225,7 @@ def _valid_test_command(value, stack_id):
     return tuple(argv)
 
 
-_SERVICE_KEYS = frozenset({"version", "urlEnv"})
+_SERVICE_KEYS = frozenset({"version", "urlEnv", "database"})
 
 
 def _valid_services(value, stack_id):
@@ -222,8 +235,12 @@ def _valid_services(value, stack_id):
     health-check is worse than none); `version` and `urlEnv` are both required
     (a service with no urlEnv exposes nothing, and there is no version to
     default to); and `urlEnv` must be a plain env var identifier, since it is
-    rendered into YAML. The image is pinned by tag, and the connection URL is
-    composed by rigging from registry constants, so neither is user input here.
+    rendered into YAML. `database` is optional -- omitted, the service's
+    registry default is used, which reproduces the pre-existing bytes; set, it
+    names the database rigging composes into both the container env and the
+    connection URL, and is rejected for a service with no database concept. The
+    image is pinned by tag, and the connection URL is composed by rigging from
+    registry constants, so neither is user input here.
     """
     if value is None:
         return ()
@@ -240,6 +257,7 @@ def _valid_services(value, stack_id):
                 f"service {service_id!r}. Allowed: "
                 f"{', '.join(services_registry.SERVICE_IDS)}."
             )
+        spec = services_registry.SERVICE_REGISTRY[service_id]
         if not isinstance(entry, dict):
             raise ConfigError(
                 f"{CONFIG_NAME}: 'stacks.{stack_id}.services.{service_id}' must "
@@ -266,8 +284,27 @@ def _valid_services(value, stack_id):
                 f"is required and must be an env var name matching "
                 f"{URL_ENV_RE.pattern} (got {url_env!r})."
             )
+        database = entry.get("database")
+        if database is not None:
+            # Reject `database` for a service with no database concept (redis)
+            # rather than silently ignore it -- the same reasoning as
+            # _valid_package_manager rejecting packageManager off node: a
+            # discarded setting leaves the user believing they configured
+            # something. Name the field so the message is actionable.
+            if spec.database_env is None:
+                raise ConfigError(
+                    f"{CONFIG_NAME}: 'stacks.{stack_id}.services.{service_id}."
+                    f"database' is set, but service {service_id!r} has no "
+                    f"database to name; remove it."
+                )
+            if not isinstance(database, str) or not SERVICE_DATABASE_RE.fullmatch(database):
+                raise ConfigError(
+                    f"{CONFIG_NAME}: 'stacks.{stack_id}.services.{service_id}."
+                    f"database' must be a string matching "
+                    f"{SERVICE_DATABASE_RE.pattern} (got {database!r})."
+                )
         resolved.append(ResolvedService(service_id=service_id, version=version,
-                                        url_env=url_env))
+                                        url_env=url_env, database=database))
     return tuple(resolved)
 
 

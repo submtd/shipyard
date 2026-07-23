@@ -234,3 +234,14 @@ def test_hostile_url_env_is_refused_before_render(tmp_path):
         "postgres": {"version": "16", "urlEnv": "${{ secrets.X }}"}}}}})
     with pytest.raises(ConfigError):
         load_config(tmp_path)
+
+
+def test_hostile_service_database_is_refused_before_render(tmp_path):
+    # `database` is composed into both a URL path segment and a container env
+    # value; a name carrying an Actions expression must be refused at load so it
+    # can never reach the rendered workflow.
+    write_config(tmp_path, {"name": "ci", "stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "DB_URL",
+                     "database": "x${{ secrets.X }}"}}}}})
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)

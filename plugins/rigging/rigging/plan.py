@@ -92,19 +92,31 @@ def _resolve_test_argv(stack_id: str, manager_id: str,
 
 
 def _resolve_services(service_list):
-    """Turn config.ResolvedService entries into (rendered services, job env)."""
+    """Turn config.ResolvedService entries into (rendered services, job env).
+
+    The database name is the repo's `database` when set, else the service's
+    registry default (equal to what it hardcoded before the key existed, so an
+    omitted `database` reproduces the pre-existing bytes). It is composed into
+    both the container env (as the service's database_env) and the connection
+    URL. A service with no database concept (redis) has database_env None and a
+    URL template that ignores the argument.
+    """
     rendered = []
     env = []
     for rs in service_list:
         spec = services_registry.SERVICE_REGISTRY[rs.service_id]
+        database = rs.database or spec.default_database
+        service_env = spec.base_env
+        if spec.database_env is not None:
+            service_env = service_env + ((spec.database_env, database),)
         rendered.append(RenderedService(
             name=spec.id,
             image=spec.image_ref(rs.version),
-            env=spec.env,
+            env=service_env,
             port=spec.port,
             options=spec.health_options,
         ))
-        env.append((rs.url_env, spec.url))
+        env.append((rs.url_env, spec.url(database)))
     return tuple(rendered), tuple(env)
 
 
