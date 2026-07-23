@@ -198,6 +198,8 @@ open(".github/workflows/security.yml", "w").write(hrender(hplan(hload(Path("."))
 goldens = {
     "python.yml":   RC(name="ci", stacks={"python": RSC(versions=("3.9", "3.12"))}),
     "polyglot.yml": RC(name="ci", stacks={"python": RSC(versions=("3.12",)), "node": RSC(versions=("20",))}),
+    "node-testcommand.yml": RC(name="ci", stacks={"node": RSC(versions=("20",), test_command=("turbo", "run", "test", "--concurrency=1"))}),
+    "python-testcommand.yml": RC(name="ci", stacks={"python": RSC(versions=("3.12",), test_command=("pytest", "-q"))}),
 }
 # One golden per registered node package manager, derived from the registry
 # rather than hardcoded -- npm keeps the plain "node.yml" name (it is the

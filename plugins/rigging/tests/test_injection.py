@@ -185,3 +185,37 @@ def test_hostile_version_string_rejected_before_render(tmp_path, hostile_version
     })
     with pytest.raises(ConfigError):
         load_config(tmp_path)
+
+
+# --- Assertion 6: testCommand is the first user-controlled text that reaches
+# a `run:` line, so it gets both guarantees: refused at load if it carries an
+# Actions expression or a newline, and shlex-quoted (inert) otherwise. --------
+
+
+@pytest.mark.parametrize("hostile", [
+    ["echo", "${{ github.event.issue.title }}"],
+    ["echo", "${{ secrets.TOKEN }}"],
+    ["npm", "test\nrm -rf /"],
+])
+def test_hostile_test_command_rejected_before_render(tmp_path, hostile):
+    write_config(tmp_path, {"name": "ci", "stacks": {"node": {"testCommand": hostile}}})
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
+
+
+def test_accepted_test_command_renders_no_expression_and_stays_quoted(tmp_path):
+    # A ; and a quote are accepted (shlex.quote makes them inert) and must not
+    # produce a ${{ }} expression in any run block.
+    out = render_for(tmp_path, {"node": {"testCommand": ["sh", "-c", "echo hi; echo 'x'"]}})
+    for block in iter_run_blocks(out):
+        assert "${{" not in block
+    # The whitelisted matrix expression is still the ONLY expression in the file.
+    for expr in EXPRESSION_RE.findall(out):
+        assert WHITELIST_RE.fullmatch(expr)
+
+
+def test_accepted_test_command_is_shell_quoted_in_the_run_line(tmp_path):
+    out = render_for(tmp_path, {"node": {"testCommand": ["sh", "-c", "echo hi; echo bye"]}})
+    # The metacharacter-bearing element is single-quoted by shlex.quote, so the
+    # `;` cannot start a second command at the shell layer.
+    assert "'echo hi; echo bye'" in out

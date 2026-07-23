@@ -58,6 +58,17 @@ and could stop an installed copy from updating.
   rule: it means the project is mid-migration or carrying a stale file, and
   rigging will not pick for you.
 
+- **`rigging` can run a repo's real test command, not just `npm test`.**
+  `.rigging.json`'s per-stack config gained `testCommand`, a JSON argv array
+  (`["turbo", "run", "test", "--concurrency=1"]`) that replaces the stack's
+  default test command — `python -m pytest`, or the node package manager's
+  `test` script. It is an argv array, not a shell string, so shell
+  metacharacters are inert and pipes/`&&`/redirects are simply not
+  expressible; a value carrying a `${{ ... }}` Actions expression or a newline
+  is refused at load, before it could reach a rendered `run:` line. `init`
+  does not write it — it is the manual escape hatch for when the default test
+  command guesses wrong.
+
 ### Fixed
 
 - **`rigging:init` no longer refuses every pnpm, yarn, and bun repo.** 0.6.0
