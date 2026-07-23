@@ -16,11 +16,18 @@ CONFIG_NAME = ".rigging.json"
 #: something they didn't, and the resulting behaviour change surfaces far
 #: from its cause.
 TOP_LEVEL_KEYS = frozenset({"name", "stacks", "pushBranches"})
-STACK_KEYS = frozenset({"versions", "packageManager"})
+STACK_KEYS = frozenset({"versions", "packageManager", "testCommand"})
 
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+
+#: The literal that opens a GitHub Actions expression. A testCommand element
+#: containing it is rejected at load: GitHub substitutes `${{ ... }}` at the
+#: YAML layer, before any shell sees the line, so shlex.quote is no defence --
+#: the only safe move is to refuse the value so it never reaches a rendered
+#: `run:` block.
+EXPRESSION_MARKER = "${{"
 
 
 class ConfigError(Exception):
@@ -60,6 +67,14 @@ class StackConfig:
     #: unknown value fails here instead of rendering a workflow that runs a
     #: command the runner does not have.
     package_manager: Optional[str] = None
+
+    #: A custom test command as an argv tuple, replacing this stack's (or its
+    #: node package manager's) default test argv. None takes the default. An
+    #: argv tuple, not a shell string, so shell metacharacters are inert once
+    #: rendered -- and pipes, redirects, and `&&` are simply not expressible,
+    #: which is the point: a repo needing a shell pipeline needs a hand-written
+    #: workflow, not this key.
+    test_command: Optional[tuple[str, ...]] = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +139,45 @@ def _valid_package_manager(value, stack_id):
             f"of {', '.join(stacks.NODE_PACKAGE_MANAGERS)} (got {value!r})."
         )
     return value
+
+
+def _valid_test_command(value, stack_id):
+    """Validate an optional `testCommand` for one stack into an argv tuple.
+
+    Two refusals carry the injection guarantee (the rest is handled by
+    shlex.quote at render): an element containing `${{` (a GitHub Actions
+    expression opener, substituted before any shell runs and unquotable) or a
+    newline (which would break out of the single argv line) is rejected here,
+    at load, so neither can reach a rendered `run:` block.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'stacks.{stack_id}.testCommand' must be a "
+            f"non-empty list of strings (got {value!r})."
+        )
+    argv = []
+    for part in value:
+        if not isinstance(part, str) or not part:
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'stacks.{stack_id}.testCommand' entries must "
+                f"be non-empty strings (got {part!r})."
+            )
+        if EXPRESSION_MARKER in part:
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'stacks.{stack_id}.testCommand' entry {part!r} "
+                f"contains {EXPRESSION_MARKER!r}, a GitHub Actions expression "
+                f"opener. It is substituted before any shell runs and cannot be "
+                f"made safe by quoting; remove it."
+            )
+        if "\n" in part:
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'stacks.{stack_id}.testCommand' entry {part!r} "
+                f"contains a newline; each entry is one argv element."
+            )
+        argv.append(part)
+    return tuple(argv)
 
 
 def _valid_push_branches(value):
@@ -201,7 +255,10 @@ def load_config(root: Path) -> Optional[Config]:
             versions = _valid_versions(versions_raw, stack_id)
         package_manager = _valid_package_manager(
             stack_value.get("packageManager"), stack_id)
+        test_command = _valid_test_command(
+            stack_value.get("testCommand"), stack_id)
         resolved[stack_id] = StackConfig(versions=versions,
-                                         package_manager=package_manager)
+                                         package_manager=package_manager,
+                                         test_command=test_command)
 
     return Config(name=name, stacks=resolved, push_branches=push_branches)

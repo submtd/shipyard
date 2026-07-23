@@ -265,3 +265,76 @@ def test_package_manager_rejected_for_a_stack_that_has_no_managers(tmp_path):
         load_config(write(tmp_path, {
             "stacks": {"python": {"packageManager": "npm"}}}))
     assert "packageManager" in str(e.value)
+
+
+# --- testCommand ---------------------------------------------------------
+
+
+def test_test_command_preserved_as_tuple(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"testCommand": ["turbo", "run", "test"]}}
+    }))
+    assert cfg.stacks["node"].test_command == ("turbo", "run", "test")
+
+
+def test_test_command_absent_is_none(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {}}}))
+    assert cfg.stacks["node"].test_command is None
+
+
+def test_test_command_applies_to_python_too(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"python": {"testCommand": ["pytest", "-q"]}}
+    }))
+    assert cfg.stacks["python"].test_command == ("pytest", "-q")
+
+
+def test_test_command_empty_list_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"testCommand": []}}}))
+    assert "testCommand" in str(e.value)
+
+
+def test_test_command_not_a_list_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"testCommand": "npm test"}}}))
+    assert "testCommand" in str(e.value)
+
+
+def test_test_command_non_string_element_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"testCommand": ["npm", 7]}}}))
+    assert "testCommand" in str(e.value)
+
+
+def test_test_command_empty_string_element_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"testCommand": ["npm", ""]}}}))
+    assert "testCommand" in str(e.value)
+
+
+def test_test_command_with_actions_expression_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {
+            "stacks": {"node": {"testCommand": ["echo", "${{ secrets.TOKEN }}"]}}
+        }))
+    msg = str(e.value)
+    assert "testCommand" in msg
+    assert "${{" in msg
+
+
+def test_test_command_with_newline_rejected(tmp_path):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {
+            "stacks": {"node": {"testCommand": ["npm", "test\nrm -rf /"]}}
+        }))
+    assert "testCommand" in str(e.value)
+
+
+def test_shell_metacharacters_are_allowed_and_kept_literal(tmp_path):
+    # A ; or a quote is inert once shlex.quote runs at render; the config layer
+    # accepts it. Only ${{ and newline are refused.
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"testCommand": ["sh", "-c", "echo hi; echo bye"]}}
+    }))
+    assert cfg.stacks["node"].test_command == ("sh", "-c", "echo hi; echo bye")
