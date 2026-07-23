@@ -484,3 +484,42 @@ def test_trufflehog_is_never_blocked_in_an_org_repo():
     assert check_preconditions({
         "ownerType": "Organization", "scanner": "trufflehog",
     }).blockers == ()
+
+
+def test_trufflehog_carries_its_advisory_in_the_registry():
+    """The BASE==HEAD advisory is a fact about the trufflehog tool, so it lives
+    in the registry beside the pin -- not gated by name in scaffold.py."""
+    assert REGISTRY["trufflehog"].advisory is not None
+    assert "BASE and HEAD" in REGISTRY["trufflehog"].advisory
+    assert REGISTRY["gitleaks"].advisory is None
+
+
+def test_trufflehog_scanner_still_surfaces_the_base_head_advisory():
+    """Refactor preserves behavior: choosing trufflehog still yields the
+    BASE==HEAD advisory at init, now sourced from the registry."""
+    pre = check_preconditions({"name": "security", "scanner": "trufflehog"})
+    assert any("BASE and HEAD" in a for a in pre.advisories)
+
+
+def test_org_blocker_remedy_names_a_license_free_scanner_from_the_registry():
+    """The org blocker offers the license-free alternative by DERIVING it from
+    the registry (scanners whose license_env is None), not by hardcoding the
+    name. Today that derives to trufflehog."""
+    pre = check_preconditions({
+        "name": "security", "scanner": "gitleaks", "ownerType": "Organization",
+    })
+    assert pre.blockers, "expected an organization blocker for gitleaks w/o license"
+    blocker = pre.blockers[0]
+    license_free = [sid for sid, spec in REGISTRY.items() if spec.license_env is None]
+    assert license_free  # guaranteed by test_at_least_one_registered_scanner_needs_no_license
+    assert all(sid in blocker for sid in license_free)
+
+
+def test_scaffold_source_holds_no_hardcoded_scanner_name():
+    """The whole point of item 3: no per-scanner fact is hardcoded in
+    scaffold.py. After the refactor the module never names 'trufflehog' -- the
+    advisory comes from the registry and the remedy is derived from it."""
+    import hull.scaffold as scaffold_mod
+    from pathlib import Path
+    source = Path(scaffold_mod.__file__).read_text(encoding="utf-8")
+    assert "trufflehog" not in source

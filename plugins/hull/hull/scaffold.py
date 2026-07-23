@@ -240,6 +240,10 @@ def check_preconditions(signals) -> Preconditions:
     blockers: list[str] = []
     advisories: list[str] = []
 
+    license_free = sorted(
+        sid for sid, spec in REGISTRY.items() if spec.license_env is None
+    )
+
     # The whole point of this guard. Without it, hull:init commits a workflow
     # that is red on its very first run, for a reason that has nothing to do
     # with the repo's code and is not stated anywhere in the file it wrote.
@@ -255,8 +259,9 @@ def check_preconditions(signals) -> Preconditions:
             f"organization) as an Actions secret, and set \"licenseSecret\" in "
             f".hull.json to that secret's name (conventionally "
             f"\"{license_env}\") so hull renders it into the scan step -- or "
-            f"re-run hull:init choosing the \"trufflehog\" scanner, which "
-            f"needs no license, no secret, and fewer token permissions."
+            f"re-run hull:init choosing a scanner that needs no license "
+            f"({', '.join(license_free)}), which needs no secret and fewer "
+            f"token permissions."
         )
 
     # Non-fatal, but it will look like a hull bug the first time someone sees
@@ -274,22 +279,12 @@ def check_preconditions(signals) -> Preconditions:
             f"than as a finding."
         )
 
-    # Scanner-specific and deliberately an advisory, not a blocker. Unlike
-    # the organization gate above -- which fails EVERY run, given those
-    # conditions -- this one is an edge case: the action explicitly handles a
-    # branch's first push by setting BASE to empty, and an ordinary push or
-    # pull request has distinct base and head. Stated anyway so a rare red
-    # run is diagnosed rather than mistaken for a hull bug.
-    if scanner == "trufflehog":
-        advisories.append(
-            "The trufflehog action exits 1 with \"BASE and HEAD commits are "
-            "the same\" when the range it is asked to scan is empty. hull's "
-            "triggers make that rare -- a branch's first push is handled by "
-            "the action itself, and an ordinary push or pull request has a "
-            "distinct base and head -- but if you do see that message, it is "
-            "the action declining to scan nothing, not a finding and not a "
-            "hull bug."
-        )
+    # Scanner-specific and deliberately an advisory, not a blocker: a fact
+    # about the tool, carried in the registry beside its pin (ScannerSpec.
+    # advisory) rather than gated here by name, so a newly registered scanner
+    # with a caveat gets this channel automatically.
+    if REGISTRY[scanner].advisory is not None:
+        advisories.append(REGISTRY[scanner].advisory)
 
     return Preconditions(tuple(blockers), tuple(advisories))
 

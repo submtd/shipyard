@@ -72,6 +72,13 @@ class ScannerSpec:
     #: user-supplied `with:` value would be a genuinely new decision, not an
     #: extension of this one.
     scan_with: Optional[dict] = None
+    #: A scanner-specific non-fatal advisory surfaced at hull:init, or None.
+    #: A fact about the tool, so it lives here beside the pin rather than as a
+    #: `scanner == "..."` gate in scaffold.py -- registering a scanner with a
+    #: quirk worth stating gets an advisory channel automatically, where the
+    #: old name-gate gave a third scanner none. A registry constant, never
+    #: user input; surfaced by scaffold.check_preconditions.
+    advisory: Optional[str] = None
 
 
 REGISTRY: dict[str, ScannerSpec] = {
@@ -118,6 +125,15 @@ REGISTRY: dict[str, ScannerSpec] = {
         # which is the failure mode the organization blocker exists to
         # prevent in the first place.
         scan_with={"extra_args": "--results=verified,unknown"},
+        advisory=(
+            "The trufflehog action exits 1 with \"BASE and HEAD commits are "
+            "the same\" when the range it is asked to scan is empty. hull's "
+            "triggers make that rare -- a branch's first push is handled by "
+            "the action itself, and an ordinary push or pull request has a "
+            "distinct base and head -- but if you do see that message, it is "
+            "the action declining to scan nothing, not a finding and not a "
+            "hull bug."
+        ),
     ),
 }
 
