@@ -18,6 +18,8 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-23
+
 ### Fixed
 
 - **hull's scanner registry no longer leaks per-scanner facts into the
