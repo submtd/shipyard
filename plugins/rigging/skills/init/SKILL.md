@@ -143,6 +143,18 @@ Carry the reason forward when there is one: section 3 passes
 wraps this same check), so the refusal is enforced by code and not only by
 this document.
 
+## Custom test command
+
+- **`testCommand`** (optional, per stack): the test command as a JSON array
+  of arguments — e.g. `["turbo", "run", "test", "--concurrency=1"]` —
+  replacing the stack's default (`python -m pytest`, or the node package
+  manager's `test` script). It is an argv array, not a shell string: each
+  element is one argument, and shell constructs (pipes, `&&`, redirects,
+  `$VAR`) are not interpreted. A repo needing a shell pipeline needs a
+  hand-written workflow. `init` never writes this key — it is a manual
+  override for when the default guesses wrong (notably `bun run test` for a
+  repo that wants a different runner).
+
 ## 3. Propose the config
 
 *(Fresh-scaffold flow only.)*
@@ -346,13 +358,6 @@ increments, not gaps in this one:
 - stacks beyond `python` and `node`
 - **package managers beyond npm, pnpm, yarn, and bun** — those four are
   driven; anything else is not detected and not expressible.
-- **custom test commands.** There is no way to tell rigging "run `make test`"
-  or "run `pnpm vitest run`" — a stack's steps come entirely from its
-  registry entry (or, for node, its selected package manager's registry
-  entry), and an unknown key under `stacks.<id>` is a hard `ConfigError`, so
-  there is deliberately no escape hatch to hand-edit the rendered steps. If
-  the registry's steps are wrong for a repo, that repo needs a hand-written
-  workflow until a later increment fixes it properly.
 - **service containers.** A test suite that needs Postgres, MySQL, Redis, or
   anything else alongside the job has nowhere to declare it; the rendered
   workflow has no `services:` block at all.
