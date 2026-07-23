@@ -1,0 +1,31 @@
+name: "ci"
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  node:
+    runs-on: "ubuntu-latest"
+    strategy:
+      matrix:
+        node: ["20"]
+    services:
+      mysql:
+        image: "mysql:8"
+        env:
+          MYSQL_ROOT_PASSWORD: "mysql"
+          MYSQL_DATABASE: "mysql"
+        ports:
+          - "3306:3306"
+        options: "--health-cmd \"mysqladmin ping\" --health-interval 10s --health-timeout 5s --health-retries 5"
+    env:
+      DATABASE_URL: "mysql://root:mysql@localhost:3306/mysql"
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7
+      - uses: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020"  # v7
+        with:
+          node-version: "${{ matrix.node }}"
+      - run: "npm ci"
+      - run: "npm test"

@@ -219,3 +219,18 @@ def test_accepted_test_command_is_shell_quoted_in_the_run_line(tmp_path):
     # The metacharacter-bearing element is single-quoted by shlex.quote, so the
     # `;` cannot start a second command at the shell layer.
     assert "'echo hi; echo bye'" in out
+
+
+def test_service_options_never_contain_an_actions_expression(tmp_path):
+    out = render_for(tmp_path, {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "DB_URL"}}}})
+    # every ${{ }} in the file is still only the whitelisted matrix form
+    for expr in EXPRESSION_RE.findall(out):
+        assert WHITELIST_RE.fullmatch(expr)
+
+
+def test_hostile_url_env_is_refused_before_render(tmp_path):
+    write_config(tmp_path, {"name": "ci", "stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "${{ secrets.X }}"}}}}})
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)

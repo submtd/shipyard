@@ -317,3 +317,46 @@ def test_existing_goldens_unchanged_after_refactor(tmp_path):
     ]:
         cfg = load_config(write(tmp_path, {"name": "ci", **data}))
         assert render(build_plan(cfg)) == read_golden(golden)
+
+
+@pytest.mark.parametrize("data,golden", [
+    ({"stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL"}}}}},
+     "node-postgres.yml"),
+    # redis pins the two things postgres does not exercise: a service with NO
+    # container env (so no `env:` block under it), and a health command whose
+    # inner quotes must survive YAML double-quote escaping.
+    ({"stacks": {"node": {"services": {
+        "redis": {"version": "7", "urlEnv": "REDIS_URL"}}}}},
+     "node-redis.yml"),
+    # mysql is the only service with BOTH a container env block AND a quoted
+    # health command -- the combined rendering neither postgres nor redis
+    # exercises alone.
+    ({"stacks": {"node": {"services": {
+        "mysql": {"version": "8", "urlEnv": "DATABASE_URL"}}}}},
+     "node-mysql.yml"),
+])
+def test_serviced_node_job_matches_golden(tmp_path, data, golden):
+    cfg = load_config(write(tmp_path, data))
+    assert render(build_plan(cfg)) == read_golden(golden)
+
+
+def test_a_job_with_no_services_renders_no_services_or_env_block(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {}}}))
+    out = render(build_plan(cfg))
+    assert "services:" not in out
+    assert "\n    env:\n" not in out  # no job-level env block
+
+
+def test_url_env_lands_at_job_level_and_carries_the_composed_url(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL"}}}}}))
+    out = render(build_plan(cfg))
+    assert '    env:\n      TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"' in out
+
+
+def test_health_options_render_into_the_services_options_line(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "DB_URL"}}}}}))
+    out = render(build_plan(cfg))
+    assert "--health-cmd pg_isready" in out

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from rigging import services as services_registry
 from rigging import stacks
 
 CONFIG_NAME = ".rigging.json"
@@ -16,11 +17,21 @@ CONFIG_NAME = ".rigging.json"
 #: something they didn't, and the resulting behaviour change surfaces far
 #: from its cause.
 TOP_LEVEL_KEYS = frozenset({"name", "stacks", "pushBranches"})
-STACK_KEYS = frozenset({"versions", "packageManager", "testCommand"})
+STACK_KEYS = frozenset({"versions", "packageManager", "testCommand", "services"})
 
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+
+#: A GitHub Actions env var name. Same strictness as hull's licenseSecret and
+#: for the same reason: it is rendered into YAML adjacent to values that matter,
+#: and no legitimate env var name is excluded by this pattern.
+URL_ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: A Docker image tag the repo may pin a service to. Reuses VERSION_RE's shape
+#: (charset-valid tags only) so a value needing YAML quoting or carrying an
+#: Actions expression is refused before render.
+SERVICE_VERSION_RE = VERSION_RE
 
 #: The literal that opens a GitHub Actions expression. A testCommand element
 #: containing it is rejected at load: GitHub substitutes `${{ ... }}` at the
@@ -50,6 +61,16 @@ BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 
 @dataclass(frozen=True)
+class ResolvedService:
+    """One service a stack's job runs: which registry service, at what image
+    version, and the env var its connection URL is exposed in."""
+
+    service_id: str
+    version: str
+    url_env: str
+
+
+@dataclass(frozen=True)
 class StackConfig:
     """One stack's settings.
 
@@ -75,6 +96,10 @@ class StackConfig:
     #: which is the point: a repo needing a shell pipeline needs a hand-written
     #: workflow, not this key.
     test_command: Optional[tuple[str, ...]] = None
+
+    #: Service containers this stack's job runs alongside its tests, in config
+    #: order. Empty when none are declared.
+    services: tuple[ResolvedService, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -187,6 +212,65 @@ def _valid_test_command(value, stack_id):
     return tuple(argv)
 
 
+_SERVICE_KEYS = frozenset({"version", "urlEnv"})
+
+
+def _valid_services(value, stack_id):
+    """Validate the optional `services` mapping into a tuple of ResolvedService.
+
+    A service id must be one the registry knows (a workflow rigging cannot
+    health-check is worse than none); `version` and `urlEnv` are both required
+    (a service with no urlEnv exposes nothing, and there is no version to
+    default to); and `urlEnv` must be a plain env var identifier, since it is
+    rendered into YAML. The image is pinned by tag, and the connection URL is
+    composed by rigging from registry constants, so neither is user input here.
+    """
+    if value is None:
+        return ()
+    if not isinstance(value, dict):
+        raise ConfigError(
+            f"{CONFIG_NAME}: 'stacks.{stack_id}.services' must be a JSON object "
+            f"of service id -> settings (got {value!r})."
+        )
+    resolved = []
+    for service_id, entry in value.items():
+        if service_id not in services_registry.SERVICE_REGISTRY:
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'stacks.{stack_id}.services' names unknown "
+                f"service {service_id!r}. Allowed: "
+                f"{', '.join(services_registry.SERVICE_IDS)}."
+            )
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'stacks.{stack_id}.services.{service_id}' must "
+                f"be a JSON object (got {entry!r})."
+            )
+        unknown = set(entry) - _SERVICE_KEYS
+        if unknown:
+            raise ConfigError(
+                f"{CONFIG_NAME}: unknown key(s) {', '.join(sorted(unknown))} in "
+                f"'stacks.{stack_id}.services.{service_id}'. Allowed keys: "
+                f"{', '.join(sorted(_SERVICE_KEYS))}."
+            )
+        version = entry.get("version")
+        if not isinstance(version, str) or not SERVICE_VERSION_RE.fullmatch(version):
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'stacks.{stack_id}.services.{service_id}.version' "
+                f"is required and must be a string matching "
+                f"{SERVICE_VERSION_RE.pattern} (got {version!r})."
+            )
+        url_env = entry.get("urlEnv")
+        if not isinstance(url_env, str) or not URL_ENV_RE.fullmatch(url_env):
+            raise ConfigError(
+                f"{CONFIG_NAME}: 'stacks.{stack_id}.services.{service_id}.urlEnv' "
+                f"is required and must be an env var name matching "
+                f"{URL_ENV_RE.pattern} (got {url_env!r})."
+            )
+        resolved.append(ResolvedService(service_id=service_id, version=version,
+                                        url_env=url_env))
+    return tuple(resolved)
+
+
 def _valid_push_branches(value):
     if value is None:
         return DEFAULT_PUSH_BRANCHES
@@ -264,8 +348,10 @@ def load_config(root: Path) -> Optional[Config]:
             stack_value.get("packageManager"), stack_id)
         test_command = _valid_test_command(
             stack_value.get("testCommand"), stack_id)
+        service_list = _valid_services(stack_value.get("services"), stack_id)
         resolved[stack_id] = StackConfig(versions=versions,
                                          package_manager=package_manager,
-                                         test_command=test_command)
+                                         test_command=test_command,
+                                         services=service_list)
 
     return Config(name=name, stacks=resolved, push_branches=push_branches)
