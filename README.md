@@ -337,7 +337,7 @@ other change.
 
 ## Status
 
-**v0.8.1.** All six plugins have shipped and version in lockstep. Everything
+**v0.9.0.** All six plugins have shipped and version in lockstep. Everything
 before 0.3.0 was pre-release; see the [CHANGELOG](CHANGELOG.md).
 
 `rigging` now drives pnpm, yarn (both majors), and bun — not just npm — takes a

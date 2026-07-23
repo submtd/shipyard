@@ -18,6 +18,8 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-23
+
 ### Added
 
 - **`rigging` service containers take an optional `database` name.**
