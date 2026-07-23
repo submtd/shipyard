@@ -18,6 +18,16 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+### Changed
+
+- Bumping the suite version no longer breaks the test suite. The per-plugin
+  smoke and stacks tests no longer hardcode the version string — they assert it
+  is well-formed semver — and a new `test_marketplace.py` check enforces
+  lockstep (all six plugins report the same version) without naming a value.
+  A release now edits only the twelve files that genuinely carry the version;
+  the fifteen meaningless release-time failures are gone, and lockstep — a
+  stated property of the suite — is enforced for the first time (#29).
+
 ## [0.7.0] - 2026-07-22
 
 ### Added

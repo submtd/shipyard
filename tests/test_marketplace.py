@@ -56,6 +56,26 @@ def test_plugin_json_version_matches_the_package_version():
         )
 
 
+def test_all_plugins_report_the_same_version():
+    """Lockstep is a stated property of this suite (see the changelog preamble)
+    and nothing enforced it -- the nine hardcoded version literals the smoke
+    tests used to carry were reaching for this check without ever making it.
+    Reads every plugin's __init__ version and asserts they are all equal,
+    naming no literal, so it passes at every consistent release and fails only
+    on a genuine desync.
+    """
+    import re
+
+    versions = {}
+    for name in PLUGIN_DIRS:
+        init = (REPO / "plugins" / name / name / "__init__.py").read_text()
+        match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', init)
+        assert match, f"{name}: no __version__ in {name}/__init__.py"
+        versions[name] = match.group(1)
+    distinct = set(versions.values())
+    assert len(distinct) == 1, f"plugins are not in lockstep: {versions}"
+
+
 def test_every_plugin_ships_at_least_one_skill():
     for name in PLUGIN_DIRS:
         skills = sorted((REPO / "plugins" / name / "skills").glob("*/SKILL.md"))

@@ -4,6 +4,7 @@ skill frontmatter, module importability, and an end-to-end render.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -13,13 +14,14 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 def test_package_imports():
     import stow
 
-    assert stow.__version__ == "0.7.0"
+    assert isinstance(stow.__version__, str)
+    assert re.fullmatch(r"\d+\.\d+\.\d+", stow.__version__), stow.__version__
 
 
 def test_plugin_json_parses_and_names_stow():
     plugin = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["name"] == "stow"
-    assert plugin["version"] == "0.7.0"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", plugin["version"]), plugin["version"]
 
 
 def test_marketplace_lists_stow():
