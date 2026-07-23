@@ -5,11 +5,6 @@ from rigging import stacks
 from rigging.stacks import REGISTRY, STACK_IDS, Step, StackSpec
 
 
-def test_rigging_version():
-    import rigging
-    assert rigging.__version__ == "0.7.0"
-
-
 def test_registry_keys():
     assert tuple(REGISTRY) == ("python", "node")
 

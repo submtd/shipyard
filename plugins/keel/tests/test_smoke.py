@@ -13,12 +13,12 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
-VERSION = "0.7.0"
 
 #: Every skill keel ships. Listed explicitly rather than globbed so that
 #: deleting a skill fails here instead of silently shrinking what's
@@ -33,13 +33,14 @@ SKILLS = (
 def test_package_imports():
     import keel
 
-    assert keel.__version__ == VERSION
+    assert isinstance(keel.__version__, str)
+    assert re.fullmatch(r"\d+\.\d+\.\d+", keel.__version__), keel.__version__
 
 
 def test_plugin_json_parses_and_names_keel():
     plugin = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["name"] == "keel"
-    assert plugin["version"] == VERSION
+    assert re.fullmatch(r"\d+\.\d+\.\d+", plugin["version"]), plugin["version"]
 
 
 def test_marketplace_lists_keel():

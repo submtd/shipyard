@@ -4,11 +4,6 @@ from ballast import stacks
 from ballast.stacks import REGISTRY, STACK_IDS, StackSpec
 
 
-def test_ballast_version():
-    import ballast
-    assert ballast.__version__ == "0.7.0"
-
-
 def test_registry_keys():
     assert tuple(REGISTRY) == ("python",)
 

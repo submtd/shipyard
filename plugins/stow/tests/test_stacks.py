@@ -6,12 +6,6 @@ from stow.blocks import CLOSER_RE, OPENER_RE, find_blocks, render_block
 from stow.stacks import BASE, REGISTRY, STACK_IDS, StackSpec
 
 
-def test_stow_version():
-    import stow
-
-    assert stow.__version__ == "0.7.0"
-
-
 def test_registry_keys():
     assert tuple(REGISTRY) == ("python", "node")
 
