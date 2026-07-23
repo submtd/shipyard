@@ -25,7 +25,7 @@ HOOKS_DIR = PLUGIN_ROOT / "hooks"
 #: test at the bottom of this file.
 IO_MODULES = ()
 
-PURE_MODULES = ("config", "stacks", "detect", "plan", "render", "scaffold")
+PURE_MODULES = ("config", "stacks", "detect", "plan", "render", "scaffold", "services")
 
 FORBIDDEN_IN_PURE_MODULES = {
     "subprocess", "os",
