@@ -171,10 +171,17 @@ def _valid_test_command(value, stack_id):
                 f"opener. It is substituted before any shell runs and cannot be "
                 f"made safe by quoting; remove it."
             )
-        if "\n" in part:
+        # splitlines() catches every line break -- \n, \r, \r\n, and the
+        # Unicode separators (U+2028/U+2029/NEL) -- not just \n. A bare \r is a
+        # line break to a YAML parser, so it would let the rendered run: command
+        # differ from what was written even though shlex.quote keeps it inert at
+        # the shell layer. `part.splitlines() != [part]` is true for any element
+        # carrying a break, including a trailing one (which `len(...) > 1` would
+        # miss).
+        if part.splitlines() != [part]:
             raise ConfigError(
                 f"{CONFIG_NAME}: 'stacks.{stack_id}.testCommand' entry {part!r} "
-                f"contains a newline; each entry is one argv element."
+                f"contains a line break; each entry is one argv element."
             )
         argv.append(part)
     return tuple(argv)

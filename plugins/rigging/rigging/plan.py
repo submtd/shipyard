@@ -88,8 +88,15 @@ def _build_job(stack_id: str, versions: tuple[str, ...],
     # caching is configured), but the documented order is the one that stays
     # correct if caching is ever added.
     manager_setup, manager_post_setup, manager_install = _manager_steps(stack_id, manager_id)
-    test_step = stacks.Step(
-        run=render_argv(_resolve_test_argv(stack_id, manager_id, test_command)))
+    test_argv = _resolve_test_argv(stack_id, manager_id, test_command)
+    # An empty test argv would render `- run: ""` -- a silent no-op test step,
+    # a green-but-testless workflow. It is unreachable today (python's
+    # default_test is non-empty; node resolves via a manager whose test is
+    # non-empty), so this asserts the invariant rather than handling a live
+    # case: a future non-node stack registered without a default_test fails
+    # loudly here instead of shipping CI that tests nothing.
+    assert test_argv, f"{stack_id}: no test command resolved (empty test argv)"
+    test_step = stacks.Step(run=render_argv(test_argv))
     return Job(
         id=spec.id,
         runs_on="ubuntu-latest",

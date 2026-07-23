@@ -331,9 +331,26 @@ def test_test_command_with_newline_rejected(tmp_path):
     assert "testCommand" in str(e.value)
 
 
+@pytest.mark.parametrize("bad_break", [
+    "a\rb",         # bare carriage return -- a line break to a YAML parser
+    "trailing\n",   # a trailing newline that len(splitlines()) > 1 would miss
+    "a\u2028b",      # Unicode LINE SEPARATOR
+    "a\u2029b",      # Unicode PARAGRAPH SEPARATOR
+], ids=["cr", "trailing-lf", "u2028", "u2029"])
+def test_test_command_any_line_break_rejected(tmp_path, bad_break):
+    # Not just \n: any line break is refused, because a bare \r (or a Unicode
+    # separator) is a line break to a YAML parser and would let the rendered
+    # run: command differ from what was written.
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {
+            "stacks": {"node": {"testCommand": ["npm", bad_break]}}
+        }))
+    assert "testCommand" in str(e.value)
+
+
 def test_shell_metacharacters_are_allowed_and_kept_literal(tmp_path):
     # A ; or a quote is inert once shlex.quote runs at render; the config layer
-    # accepts it. Only ${{ and newline are refused.
+    # accepts it. Only ${{ and line breaks are refused.
     cfg = load_config(write(tmp_path, {
         "stacks": {"node": {"testCommand": ["sh", "-c", "echo hi; echo bye"]}}
     }))
