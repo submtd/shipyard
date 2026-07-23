@@ -18,6 +18,8 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-22
+
 ### Added
 
 - **`rigging` jobs can run a database alongside their tests.** `.rigging.json`'s
