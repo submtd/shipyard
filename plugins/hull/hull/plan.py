@@ -72,7 +72,7 @@ def _build_job(scanner_id: str, license_secret=None) -> Job:
     )
     scan_step = scanners.Step(uses=spec.action_ref,
                               env=_scan_env(spec, license_secret),
-                              with_=spec.scan_with,
+                              with_=dict(spec.scan_with) if spec.scan_with else None,
                               uses_version=spec.action_ref_version)
     return Job(
         id=spec.id,

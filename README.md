@@ -303,6 +303,7 @@ The action pins are authored here:
 | `actions/checkout` | `plugins/rigging/rigging/plan.py`, `plugins/hull/hull/plan.py` |
 | `actions/setup-python`, `actions/setup-node` | `plugins/rigging/rigging/stacks.py` |
 | `gitleaks/gitleaks-action` | `plugins/hull/hull/scanners.py` |
+| `trufflesecurity/trufflehog` | `plugins/hull/hull/scanners.py` |
 
 Every ref is pinned to a full commit SHA with a trailing `# v7`-style
 comment. The SHA is the pin; the comment is for humans and for Dependabot.
@@ -318,6 +319,14 @@ python3 scripts/sync_action_pins.py     # carries the bump into the registries
 python3 -m pytest -q
 git commit -am "chore(deps): sync action pins into the registries"
 ```
+
+One pin is the exception: `trufflesecurity/trufflehog`. Dependabot only bumps
+refs that appear in a workflow committed to *this* repo, and shipyard's own
+`security.yml` uses `gitleaks` — so trufflehog is shipped to consumers but
+never dogfooded here, and Dependabot never proposes a bump for it. When a new
+trufflehog release ships, edit `action_ref` and `action_ref_version` on the
+`"trufflehog"` entry in `plugins/hull/hull/scanners.py` by hand, then run
+`scripts/sync_action_pins.py` to regenerate the goldens.
 
 The changelog gate also applies to `dependabot/*` branches (they classify
 as `other` under trunk), so such a PR needs a `CHANGELOG.md` entry like any

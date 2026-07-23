@@ -177,3 +177,15 @@ def test_scan_step_carries_the_specs_scan_with(monkeypatch):
 def test_scan_step_has_no_with_when_the_spec_declares_none():
     job = build_plan(Config(name="security", scanner="gitleaks")).jobs[0]
     assert job.steps[1].with_ is None
+
+
+def test_build_plan_does_not_mutate_the_registry_spec_scan_with():
+    """The plan copies the registry's scan_with before handing it to the step,
+    exactly as it copies env -- mutating the shared spec would corrupt the
+    registry entry for every later plan built in the same process. trufflehog
+    is the scanner that actually declares a scan_with."""
+    before = dict(REGISTRY["trufflehog"].scan_with)
+    plan = build_plan(Config(name="security", scanner="trufflehog"))
+    # Mutating the rendered step's with_ must not reach back into the registry.
+    plan.jobs[0].steps[1].with_["extra_args"] = "MUTATED"
+    assert REGISTRY["trufflehog"].scan_with == before
