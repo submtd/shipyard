@@ -9,7 +9,7 @@ from stow.stacks import BASE, REGISTRY, STACK_IDS, StackSpec
 def test_stow_version():
     import stow
 
-    assert stow.__version__ == "0.6.0"
+    assert stow.__version__ == "0.7.0"
 
 
 def test_registry_keys():
