@@ -335,10 +335,39 @@ def test_existing_goldens_unchanged_after_refactor(tmp_path):
     ({"stacks": {"node": {"services": {
         "mysql": {"version": "8", "urlEnv": "DATABASE_URL"}}}}},
      "node-mysql.yml"),
+    # A chosen database flows into BOTH the POSTGRES_DB env line and the URL
+    # path segment. This is the org-monorepo case: a repo whose test harness
+    # guards on the DB name ending in _test.
+    ({"stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL",
+                     "database": "onelife_test"}}}}},
+     "node-postgres-database.yml"),
 ])
 def test_serviced_node_job_matches_golden(tmp_path, data, golden):
     cfg = load_config(write(tmp_path, data))
     assert render(build_plan(cfg)) == read_golden(golden)
+
+
+def test_database_changes_only_the_db_env_line_and_the_url_segment(tmp_path):
+    # Setting `database` must move exactly two lines relative to the default
+    # postgres render -- the POSTGRES_DB env value and the URL path segment --
+    # and nothing else. A wider diff would mean the key leaked into some other
+    # part of the rendered workflow.
+    base = load_config(write(tmp_path, {"stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL"}}}}}))
+    named = load_config(write(tmp_path, {"stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL",
+                     "database": "onelife_test"}}}}}))
+    base_lines = render(build_plan(base)).splitlines()
+    named_lines = render(build_plan(named)).splitlines()
+    differing = [(b, n) for b, n in zip(base_lines, named_lines) if b != n]
+    assert len(base_lines) == len(named_lines)  # no lines added or removed
+    assert differing == [
+        ('          POSTGRES_DB: "postgres"',
+         '          POSTGRES_DB: "onelife_test"'),
+        ('      TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"',
+         '      TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/onelife_test"'),
+    ]
 
 
 def test_a_job_with_no_services_renders_no_services_or_env_block(tmp_path):

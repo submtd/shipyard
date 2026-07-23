@@ -344,8 +344,9 @@ before 0.3.0 was pre-release; see the [CHANGELOG](CHANGELOG.md).
 custom `testCommand` when a repo's real test command isn't the default, and can
 run a `postgres`, `mysql`, or `redis` service alongside the tests (rigging owns
 the image tag, port, credentials, and health check, and hands the job a
-connection URL). `hull` adds a license-free `trufflehog` scanner alongside
-`gitleaks`. Two `init`
+connection URL — whose `database` name the repo can set, so a harness that
+guards its test DB by name works end to end). `hull` adds a license-free
+`trufflehog` scanner alongside `gitleaks`. Two `init`
 skills still **refuse to scaffold** rather than render an artifact that cannot
 work: `hull:init` in an organization-owned repo with no scanner license, and
 `rigging:init` when a JavaScript toolchain is genuinely undeterminable (an

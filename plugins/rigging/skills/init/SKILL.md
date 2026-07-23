@@ -159,13 +159,18 @@ this document.
 
 - **`services`** (optional, per stack): service containers the job runs
   alongside its tests, as `{"<service>": {"version": "<tag>", "urlEnv":
-  "<ENV_NAME>"}}`. Supported services: `postgres`, `mysql`, `redis`. rigging
-  owns the image, port, credentials, and — crucially — the health check, so
-  the job waits for the container to be ready instead of racing it. The repo
-  picks only the image `version` (a major tag, e.g. `"16"`) and the `urlEnv`
-  the connection URL is exposed in (a plain env var name); rigging composes
-  the URL from its own credentials and sets it at the job level, so every
-  step sees it. `init` does not write this — declare it by hand when a suite
+  "<ENV_NAME>", "database": "<name>"}}`. Supported services: `postgres`,
+  `mysql`, `redis`. rigging owns the image, port, credentials, and —
+  crucially — the health check, so the job waits for the container to be ready
+  instead of racing it. The repo picks the image `version` (a major tag, e.g.
+  `"16"`), the `urlEnv` the connection URL is exposed in (a plain env var
+  name), and optionally the `database` name (letters/digits/underscore/hyphen;
+  default `postgres` / `mysql`) — rigging composes the URL from its own
+  credentials and the chosen database and sets it at the job level, so every
+  step sees it. Naming the database lets a repo whose test harness guards on
+  the DB name (e.g. refusing to run unless it ends in `_test`) drive rigging
+  end to end; `database` is rejected for `redis`, which has no database
+  concept. `init` does not write any of this — declare it by hand when a suite
   needs a live database.
 
 ## 3. Propose the config

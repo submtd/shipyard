@@ -18,6 +18,26 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+### Added
+
+- **`rigging` service containers take an optional `database` name.**
+  `.rigging.json`'s per-service config gained `database` alongside `version`
+  and `urlEnv`: `{"postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL",
+  "database": "onelife_test"}}`. rigging composes that name into both the
+  container's `POSTGRES_DB` (or `MYSQL_DATABASE`) and the connection URL it
+  hands the job, so a repo whose test harness guards on the database name —
+  refusing to run unless it ends in `_test`, a common way to keep a stray
+  `TEST_DATABASE_URL` from truncating dev or prod data — can now drive rigging
+  end to end. The key is **optional and default-preserving**: omitted, each
+  service uses the name it hardcoded before (`postgres` / `mysql`), so every
+  existing rendered workflow is byte-identical. It is rejected for `redis`,
+  which has no database concept, rather than silently ignored. Like
+  `testCommand` and `services` themselves, it is a manual escape hatch —
+  `rigging:init` does not propose it. This is the final increment closing the
+  organization-monorepo adoption of rigging (issue #24 follow-up): a repo on
+  Postgres with a name-guarded test database was the last case rigging could
+  not render without a hand-edit.
+
 ### Changed
 
 - **keel's "What keel does not do" section now names the heredoc evasion

@@ -425,3 +425,41 @@ def test_services_not_a_dict_rejected(tmp_path):
     with pytest.raises(ConfigError) as e:
         load_config(write(tmp_path, {"stacks": {"node": {"services": ["postgres"]}}}))
     assert "services" in str(e.value)
+
+
+def test_service_database_threaded_onto_resolved_service(tmp_path):
+    cfg = load_config(write(tmp_path, {
+        "stacks": {"node": {"services": {
+            "postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL",
+                         "database": "onelife_test"}}}}
+    }))
+    assert cfg.stacks["node"].services == (
+        ResolvedService(service_id="postgres", version="16",
+                        url_env="TEST_DATABASE_URL", database="onelife_test"),
+    )
+
+
+def test_service_database_omitted_is_none(tmp_path):
+    cfg = load_config(write(tmp_path, {"stacks": {"node": {"services": {
+        "postgres": {"version": "16", "urlEnv": "DB_URL"}}}}}))
+    assert cfg.stacks["node"].services[0].database is None
+
+
+def test_database_on_a_service_without_one_rejected(tmp_path):
+    # redis has no database concept; naming a database for it is a config error,
+    # not a silently-ignored setting.
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": {
+            "redis": {"version": "7", "urlEnv": "REDIS_URL",
+                      "database": "onelife_test"}}}}}))
+    msg = str(e.value)
+    assert "database" in msg and "redis" in msg  # names the field and the service
+
+
+@pytest.mark.parametrize("bad_database", ["one life", "db/name", "on${{x}}", "", "a.b"])
+def test_bad_service_database_rejected(tmp_path, bad_database):
+    with pytest.raises(ConfigError) as e:
+        load_config(write(tmp_path, {"stacks": {"node": {"services": {
+            "postgres": {"version": "16", "urlEnv": "DB_URL",
+                         "database": bad_database}}}}}))
+    assert "database" in str(e.value)
