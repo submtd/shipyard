@@ -1,7 +1,7 @@
 {
   "name": "stow",
   "displayName": "stow",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Outfits a repo's baseline files: manages .gitignore sections per detected stack, updatable in place.",
   "license": "MIT",
   "keywords": [
