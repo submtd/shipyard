@@ -18,6 +18,17 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+### Changed
+
+- **keel's "What keel does not do" section now names the heredoc evasion
+  explicitly.** The list of un-inspected shell constructs already covered
+  `$()` command substitution, but not the specific `gh pr create` wrapped in
+  a heredoc'd `$(cat <<'EOF' … EOF)` — the exact form that opened keel's own
+  first PR past the advisory guard. Naming it makes the deliberate boundary
+  legible to a reader debugging why a heredoc'd command wasn't classified.
+  Documentation only; no behavior change (the guard is advisory by design, and
+  the real gates are server-side).
+
 ## [0.8.1] - 2026-07-23
 
 ### Fixed
