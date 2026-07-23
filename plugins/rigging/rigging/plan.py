@@ -10,11 +10,23 @@ import shlex
 from dataclasses import dataclass
 
 from rigging import config, stacks
+from rigging import services as services_registry
 
 CHECKOUT_STEP = stacks.Step(
     uses="actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
     uses_version="v7",
 )
+
+
+@dataclass(frozen=True)
+class RenderedService:
+    """A service container resolved to exactly what render emits."""
+
+    name: str
+    image: str
+    env: tuple[tuple[str, str], ...]
+    port: int
+    options: str
 
 
 @dataclass(frozen=True)
@@ -26,6 +38,11 @@ class Job:
     matrix_var: str
     versions: tuple[str, ...]
     steps: tuple[stacks.Step, ...]
+    #: Service containers for this job, in config order. Empty when none.
+    services: tuple[RenderedService, ...] = ()
+    #: Job-level environment (today: each service's connection URL under its
+    #: urlEnv), in config order. Empty when none.
+    env: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -74,9 +91,27 @@ def _resolve_test_argv(stack_id: str, manager_id: str,
     return stacks.REGISTRY[stack_id].default_test
 
 
+def _resolve_services(service_list):
+    """Turn config.ResolvedService entries into (rendered services, job env)."""
+    rendered = []
+    env = []
+    for rs in service_list:
+        spec = services_registry.SERVICE_REGISTRY[rs.service_id]
+        rendered.append(RenderedService(
+            name=spec.id,
+            image=spec.image_ref(rs.version),
+            env=spec.env,
+            port=spec.port,
+            options=spec.health_options,
+        ))
+        env.append((rs.url_env, spec.url))
+    return tuple(rendered), tuple(env)
+
+
 def _build_job(stack_id: str, versions: tuple[str, ...],
                manager_id: str = stacks.DEFAULT_NODE_PACKAGE_MANAGER,
-               test_command: tuple[str, ...] | None = None) -> Job:
+               test_command: tuple[str, ...] | None = None,
+               services: tuple = ()) -> Job:
     spec = stacks.REGISTRY[stack_id]
     setup_step = stacks.Step(
         uses=spec.setup_uses,
@@ -97,6 +132,7 @@ def _build_job(stack_id: str, versions: tuple[str, ...],
     # loudly here instead of shipping CI that tests nothing.
     assert test_argv, f"{stack_id}: no test command resolved (empty test argv)"
     test_step = stacks.Step(run=render_argv(test_argv))
+    rendered_services, job_env = _resolve_services(services)
     return Job(
         id=spec.id,
         runs_on="ubuntu-latest",
@@ -106,6 +142,8 @@ def _build_job(stack_id: str, versions: tuple[str, ...],
             CHECKOUT_STEP, *manager_setup, setup_step,
             *manager_post_setup, *spec.steps, *manager_install, test_step,
         ),
+        services=rendered_services,
+        env=job_env,
     )
 
 
@@ -113,7 +151,7 @@ def build_plan(cfg: config.Config) -> CiPlan:
     jobs = tuple(
         _build_job(stack_id, stack_cfg.versions,
                    stack_cfg.package_manager or stacks.DEFAULT_NODE_PACKAGE_MANAGER,
-                   stack_cfg.test_command)
+                   stack_cfg.test_command, stack_cfg.services)
         for stack_id, stack_cfg in cfg.stacks.items()
     )
     return CiPlan(name=cfg.name, jobs=jobs, push_branches=cfg.push_branches)

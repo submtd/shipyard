@@ -81,8 +81,24 @@ def _job_lines(job) -> list[str]:
         "    strategy:",
         "      matrix:",
         f"        {job.matrix_var}: [{versions}]",
-        "    steps:",
     ]
+    if job.services:
+        lines.append("    services:")
+    for service in job.services:
+        lines.append(f"      {service.name}:")
+        lines.append(f"        image: {_quote(service.image)}")
+        if service.env:
+            lines.append("        env:")
+            for key, value in service.env:
+                lines.append(f"          {key}: {_quote(value)}")
+        lines.append("        ports:")
+        lines.append(f"          - {_quote(f'{service.port}:{service.port}')}")
+        lines.append(f"        options: {_quote(service.options)}")
+    if job.env:
+        lines.append("    env:")
+        for key, value in job.env:
+            lines.append(f"      {key}: {_quote(value)}")
+    lines.append("    steps:")
     for step in job.steps:
         lines.extend(_step_lines(step))
     return lines

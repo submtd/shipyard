@@ -184,7 +184,7 @@ def regenerate():
 import sys
 sys.path.insert(0, "plugins/rigging"); sys.path.insert(0, "plugins/hull")
 from pathlib import Path
-from rigging.config import Config as RC, StackConfig as RSC, load_config as rload
+from rigging.config import Config as RC, StackConfig as RSC, ResolvedService as RS, load_config as rload
 from rigging.plan import build_plan as rplan
 from rigging.render import render as rrender
 from rigging.stacks import NODE_PACKAGE_MANAGERS, DEFAULT_NODE_PACKAGE_MANAGER
@@ -200,6 +200,12 @@ goldens = {
     "polyglot.yml": RC(name="ci", stacks={"python": RSC(versions=("3.12",)), "node": RSC(versions=("20",))}),
     "node-testcommand.yml": RC(name="ci", stacks={"node": RSC(versions=("20",), test_command=("turbo", "run", "test", "--concurrency=1"))}),
     "python-testcommand.yml": RC(name="ci", stacks={"python": RSC(versions=("3.12",), test_command=("pytest", "-q"))}),
+    "node-postgres.yml": RC(name="ci", stacks={"node": RSC(
+        versions=("20",),
+        services=(RS(service_id="postgres", version="16", url_env="TEST_DATABASE_URL"),))}),
+    "node-redis.yml": RC(name="ci", stacks={"node": RSC(
+        versions=("20",),
+        services=(RS(service_id="redis", version="7", url_env="REDIS_URL"),))}),
 }
 # One golden per registered node package manager, derived from the registry
 # rather than hardcoded -- npm keeps the plain "node.yml" name (it is the
