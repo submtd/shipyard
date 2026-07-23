@@ -329,6 +329,12 @@ def test_existing_goldens_unchanged_after_refactor(tmp_path):
     ({"stacks": {"node": {"services": {
         "redis": {"version": "7", "urlEnv": "REDIS_URL"}}}}},
      "node-redis.yml"),
+    # mysql is the only service with BOTH a container env block AND a quoted
+    # health command -- the combined rendering neither postgres nor redis
+    # exercises alone.
+    ({"stacks": {"node": {"services": {
+        "mysql": {"version": "8", "urlEnv": "DATABASE_URL"}}}}},
+     "node-mysql.yml"),
 ])
 def test_serviced_node_job_matches_golden(tmp_path, data, golden):
     cfg = load_config(write(tmp_path, data))

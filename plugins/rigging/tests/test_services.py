@@ -1,5 +1,3 @@
-import re
-
 from rigging.services import SERVICE_REGISTRY, SERVICE_IDS, ServiceSpec
 
 

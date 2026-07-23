@@ -206,6 +206,9 @@ goldens = {
     "node-redis.yml": RC(name="ci", stacks={"node": RSC(
         versions=("20",),
         services=(RS(service_id="redis", version="7", url_env="REDIS_URL"),))}),
+    "node-mysql.yml": RC(name="ci", stacks={"node": RSC(
+        versions=("20",),
+        services=(RS(service_id="mysql", version="8", url_env="DATABASE_URL"),))}),
 }
 # One golden per registered node package manager, derived from the registry
 # rather than hardcoded -- npm keeps the plain "node.yml" name (it is the

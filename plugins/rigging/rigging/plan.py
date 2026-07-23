@@ -111,7 +111,7 @@ def _resolve_services(service_list):
 def _build_job(stack_id: str, versions: tuple[str, ...],
                manager_id: str = stacks.DEFAULT_NODE_PACKAGE_MANAGER,
                test_command: tuple[str, ...] | None = None,
-               services: tuple = ()) -> Job:
+               services: tuple[config.ResolvedService, ...] = ()) -> Job:
     spec = stacks.REGISTRY[stack_id]
     setup_step = stacks.Step(
         uses=spec.setup_uses,

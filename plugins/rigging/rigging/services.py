@@ -60,6 +60,11 @@ SERVICE_REGISTRY: dict[str, ServiceSpec] = {
         image="mysql",
         port=3306,
         env=(("MYSQL_ROOT_PASSWORD", "mysql"), ("MYSQL_DATABASE", "mysql")),
+        # `mysqladmin ping` is a LIVENESS probe, not a readiness one: it returns
+        # exit 0 as soon as the server answers the socket (even on "Access
+        # denied"), which can be a beat before MySQL will serve queries. That is
+        # the standard GitHub Actions idiom and --health-retries covers the gap;
+        # it is not a query-level check. Do not mistake it for one.
         health_options=f'--health-cmd "mysqladmin ping" {_HEALTH}',
         url_template="mysql://root:mysql@localhost:{port}/mysql",
     ),
