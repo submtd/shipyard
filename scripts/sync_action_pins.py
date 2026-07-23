@@ -229,8 +229,22 @@ for manager_id in NODE_PACKAGE_MANAGERS:
 for fn, cfg in goldens.items():
     open("plugins/rigging/tests/golden/" + fn, "w").write(rrender(rplan(cfg)))
 
-open("plugins/hull/tests/golden/security.yml", "w").write(
-    hrender(hplan(HC(name="security", scanner="gitleaks"))))
+hull_goldens = {
+    "security.yml":            HC(name="security", scanner="gitleaks"),
+    "security-license.yml":    HC(name="security", scanner="gitleaks",
+                                  license_secret="GITLEAKS_LICENSE"),
+    "security-trufflehog.yml": HC(name="security", scanner="trufflehog"),
+}
+# The directory is the source of truth for WHAT must be regenerated; the map
+# is the source of truth for HOW to render each. A golden on disk with no
+# mapping would be silently left stale after a pin bump -- the exact bug #30
+# item 2 fixes -- so reconcile the two and fail loudly on a gap.
+_hull_golden_dir = Path("plugins/hull/tests/golden")
+_on_disk = {p.name for p in _hull_golden_dir.glob("*.yml")}
+_missing = _on_disk - set(hull_goldens)
+assert not _missing, f"hull goldens with no regen mapping: {sorted(_missing)}"
+for fn, cfg in hull_goldens.items():
+    (_hull_golden_dir / fn).write_text(hrender(hplan(cfg)), encoding="utf-8")
 """
     subprocess.run([sys.executable, "-c", script], cwd=REPO, check=True)
 
