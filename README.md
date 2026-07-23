@@ -325,14 +325,17 @@ other change.
 
 ## Status
 
-**v0.6.0.** All six plugins have shipped and version in lockstep. Everything
+**v0.7.0.** All six plugins have shipped and version in lockstep. Everything
 before 0.3.0 was pre-release; see the [CHANGELOG](CHANGELOG.md).
 
-Three `init` skills now **refuse to scaffold** rather than render an artifact
-that cannot work in the target repo: `hull:init` in an organization-owned repo
-with no scanner license, and `rigging:init` in a repo driven by pnpm, yarn, or
-bun. Both say why, and both are a change from 0.5.1, which produced files in
-those cases.
+`rigging` now drives pnpm, yarn (both majors), and bun — not just npm — and
+takes a custom `testCommand` when a repo's real test command isn't the default.
+`hull` adds a license-free `trufflehog` scanner alongside `gitleaks`. Two `init`
+skills still **refuse to scaffold** rather than render an artifact that cannot
+work: `hull:init` in an organization-owned repo with no scanner license, and
+`rigging:init` when a JavaScript toolchain is genuinely undeterminable (an
+ambiguous Yarn major, or two package-manager lockfiles at the root). Both say
+why.
 
 Each plugin's `init` skill scaffolds its config and renders its artifact,
 never overwriting a file that already exists:

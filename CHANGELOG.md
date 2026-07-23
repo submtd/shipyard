@@ -18,6 +18,8 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-22
+
 ### Added
 
 - **A secret scanner that needs no license.** `.hull.json`'s `scanner` now

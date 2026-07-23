@@ -13,13 +13,13 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 def test_package_imports():
     import rigging
 
-    assert rigging.__version__ == "0.6.0"
+    assert rigging.__version__ == "0.7.0"
 
 
 def test_plugin_json_parses_and_names_rigging():
     plugin = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["name"] == "rigging"
-    assert plugin["version"] == "0.6.0"
+    assert plugin["version"] == "0.7.0"
 
 
 def test_marketplace_lists_rigging():
