@@ -18,6 +18,19 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+### Fixed
+
+- **hull's scanner registry no longer leaks per-scanner facts into the
+  scaffolder, and its goldens all regenerate.** The BASE==HEAD advisory and
+  the license-free remedy the organization blocker offers are now derived from
+  `ScannerSpec` instead of naming `trufflehog` in `scaffold.py`, so a third
+  scanner gets an advisory channel and is offered as a remedy automatically;
+  `sync_action_pins.py` regenerates all three hull goldens (not just one) with
+  a loud guard for an unmapped golden; the scan step copies its `with:` inputs
+  before rendering, matching how it already copies `env`; and the README names
+  trufflehog's manual bump path, since Dependabot cannot see a pin that appears
+  in no committed workflow (#30).
+
 ## [0.8.0] - 2026-07-22
 
 ### Added
