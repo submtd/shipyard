@@ -18,6 +18,19 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+### Added
+
+- **`rigging` jobs can run a database alongside their tests.** `.rigging.json`'s
+  per-stack config gained `services` — `postgres`, `mysql`, or `redis` — as
+  `{"postgres": {"version": "16", "urlEnv": "TEST_DATABASE_URL"}}`. rigging owns
+  the image tag, port, credentials, and the **health check** (so the job waits
+  for readiness instead of racing the container and flaking), and composes the
+  connection URL from its own credentials into the job-level env var the repo
+  names. Images are pinned by major tag, not digest — an ephemeral test fixture
+  on a private network has a different threat model from an Action that runs
+  with the workflow token. This is the third and final increment of #26: a repo
+  needing a live Postgres can now use rigging end to end.
+
 ### Changed
 
 - Bumping the suite version no longer breaks the test suite. The per-plugin

@@ -134,9 +134,9 @@ prose to drift from the code that actually decides):
 
 Note that `detect_stacks` still reports `node` as detected even when
 `node_package_manager` refuses it — it is not silently dropped. The detection
-and the manager selection are deliberately separate functions so that a
-future increment (custom test commands, service containers) can extend one
-without touching the other.
+and the manager selection are deliberately separate functions so that a later
+increment (custom test commands, service containers — both landed since) can
+extend one without touching the other.
 
 Carry the reason forward when there is one: section 3 passes
 `detect.unsupported_reasons(root)` back in as the `unsupported` signal (it
@@ -154,6 +154,19 @@ this document.
   hand-written workflow. `init` never writes this key — it is a manual
   override for when the default guesses wrong (notably `bun run test` for a
   repo that wants a different runner).
+
+## Service containers
+
+- **`services`** (optional, per stack): service containers the job runs
+  alongside its tests, as `{"<service>": {"version": "<tag>", "urlEnv":
+  "<ENV_NAME>"}}`. Supported services: `postgres`, `mysql`, `redis`. rigging
+  owns the image, port, credentials, and — crucially — the health check, so
+  the job waits for the container to be ready instead of racing it. The repo
+  picks only the image `version` (a major tag, e.g. `"16"`) and the `urlEnv`
+  the connection URL is exposed in (a plain env var name); rigging composes
+  the URL from its own credentials and sets it at the job level, so every
+  step sees it. `init` does not write this — declare it by hand when a suite
+  needs a live database.
 
 ## 3. Propose the config
 
@@ -358,9 +371,6 @@ increments, not gaps in this one:
 - stacks beyond `python` and `node`
 - **package managers beyond npm, pnpm, yarn, and bun** — those four are
   driven; anything else is not detected and not expressible.
-- **service containers.** A test suite that needs Postgres, MySQL, Redis, or
-  anything else alongside the job has nowhere to declare it; the rendered
-  workflow has no `services:` block at all.
 - lint, build, and type-check jobs (today's job per stack only installs and
   runs tests)
 - dependency caching
