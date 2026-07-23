@@ -215,11 +215,14 @@ than block on ignorance.
   Claude Code session.
 - **It does not parse shell constructs adversarially.** `bash -c`, `eval`,
   subshells, backticks/`$()`, and other command substitution are not
-  inspected — deliberately. keel's predecessor tried, and a review of that
-  code found roughly 20 verified ways to evade its checks while also
-  producing false positives (e.g. splitting a quoted commit message and
-  classifying a phantom push). Escalating that arms race isn't worth it: it
-  buys false confidence without buying real coverage.
+  inspected — deliberately. A `gh pr create` wrapped in a heredoc'd
+  `$(cat <<'EOF' … EOF)` slips straight past the guard, and keel's own first
+  PR was opened exactly that way. That is the design working, not failing:
+  keel's predecessor tried to close such holes, and a review of that code
+  found roughly 20 verified ways to evade its checks while also producing
+  false positives (e.g. splitting a quoted commit message and classifying a
+  phantom push). Escalating that arms race isn't worth it: it buys false
+  confidence without buying real coverage.
 - **It is not a security control.** It cannot stop someone determined to
   evade it, and it is not meant to. Its job is to catch honest mistakes
   early, not to gate access.
