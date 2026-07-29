@@ -312,6 +312,8 @@ def test_cache_keys_name_what_setup_node_can_actually_cache():
     directory by running `yarn --version` DURING its own step, and rigging
     enables corepack after it, so berry would be detected as the runner's
     Yarn 1.22 and a useless directory cached."""
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
     keys = {i: m.cache_key for i, m in NODE_PACKAGE_MANAGERS.items()}
     assert keys == {
         "npm": "npm",
