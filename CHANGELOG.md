@@ -18,6 +18,8 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-29
+
 ### Added
 
 - **`rigging` node workflows cache the package manager's store.** The
