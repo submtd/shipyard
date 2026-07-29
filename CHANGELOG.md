@@ -18,6 +18,18 @@ and could stop an installed copy from updating.
 
 ## [Unreleased]
 
+### Added
+
+- **`rigging` node workflows cache the package manager's store.** The
+  generated `setup-node` step now carries the `cache` input derived from the
+  configured package manager (`npm`, `pnpm`, or `yarn` for yarn classic), so
+  CI runs restore the dependency store keyed on the lockfile instead of
+  installing cold every run (#45). bun gets no `cache` input because
+  setup-node does not support it, and yarn-berry gets none because setup-node
+  resolves the yarn cache directory during its own step — before rigging's
+  `corepack enable` runs — and would misdetect berry as the runner's Yarn
+  1.22, caching a directory berry never reads.
+
 ## [0.9.0] - 2026-07-23
 
 ### Added

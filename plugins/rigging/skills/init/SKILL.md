@@ -82,6 +82,18 @@ non-null:
   (the flag berry installs with) is a Yarn 2+ flag that classic yarn errors
   on, so that step is what makes the runner capable of running berry's
   install line at all.
+
+  The rendered `setup-node` step also carries a `cache` input for npm, pnpm,
+  and yarn classic, restoring the manager's package store keyed on the
+  lockfile. bun and yarn-berry get **no** `cache` input, and that is
+  deliberate, not missing support: setup-node cannot cache for bun at all,
+  and for berry it probes the yarn version during its own step — before the
+  `corepack enable` step above has run — so it would misdetect berry as the
+  runner's Yarn 1.22 and cache a directory berry never reads. If a user asks
+  why their bun or berry workflow "is missing caching", that is the answer.
+  Relatedly, the cache input assumes the lockfile is committed — but a
+  lockfile-less repo never gets this far, since detection refuses it and
+  `npm ci` could not run anyway.
 - **A reason** — this is a **refusal**, not a warning. Print it verbatim; it
   already names the files it found and what the user must do. Do not scaffold
   the node stack. If python is also detected, scaffold that alone and say

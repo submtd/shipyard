@@ -125,15 +125,22 @@ def _build_job(stack_id: str, versions: tuple[str, ...],
                test_command: tuple[str, ...] | None = None,
                services: tuple[config.ResolvedService, ...] = ()) -> Job:
     spec = stacks.REGISTRY[stack_id]
+    setup_with = {spec.setup_with_key: "${{ matrix.%s }}" % spec.matrix_var}
+    if stack_id == "node":
+        # setup-node restores the manager's package store when told which
+        # manager keys it. Managers with cache_key None (bun, yarn-berry) get
+        # no `cache` input at all rather than a wrong one -- see the registry.
+        cache_key = stacks.NODE_PACKAGE_MANAGERS[manager_id].cache_key
+        if cache_key is not None:
+            setup_with["cache"] = cache_key
     setup_step = stacks.Step(
         uses=spec.setup_uses,
         uses_version=spec.setup_uses_version,
-        with_={spec.setup_with_key: "${{ matrix.%s }}" % spec.matrix_var},
+        with_=setup_with,
     )
     # The manager's own installer runs before setup-node, matching pnpm's
-    # documented order. Nothing here depends on it today (no dependency
-    # caching is configured), but the documented order is the one that stays
-    # correct if caching is ever added.
+    # documented order. The `cache` input depends on it: setup-node resolves
+    # the pnpm store path by running pnpm during its own step.
     manager_setup, manager_post_setup, manager_install = _manager_steps(stack_id, manager_id)
     test_argv = _resolve_test_argv(stack_id, manager_id, test_command)
     # An empty test argv would render `- run: ""` -- a silent no-op test step,

@@ -303,3 +303,22 @@ def test_only_yarn_berry_needs_a_post_setup_step():
 
     needing = {i for i, m in NODE_PACKAGE_MANAGERS.items() if m.post_setup_steps}
     assert needing == {"yarn-berry"}
+
+
+def test_cache_keys_name_what_setup_node_can_actually_cache():
+    """The cache_key is passed straight to setup-node's `cache` input, whose
+    v7 source supports exactly npm, pnpm and yarn -- so bun must stay None.
+    yarn-berry is None for a subtler reason: setup-node resolves the cache
+    directory by running `yarn --version` DURING its own step, and rigging
+    enables corepack after it, so berry would be detected as the runner's
+    Yarn 1.22 and a useless directory cached."""
+    from rigging.stacks import NODE_PACKAGE_MANAGERS
+
+    keys = {i: m.cache_key for i, m in NODE_PACKAGE_MANAGERS.items()}
+    assert keys == {
+        "npm": "npm",
+        "pnpm": "pnpm",
+        "yarn1": "yarn",
+        "yarn-berry": None,
+        "bun": None,
+    }
