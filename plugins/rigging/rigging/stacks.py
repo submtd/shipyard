@@ -74,6 +74,15 @@ class PackageManager:
     #: `setup_steps` rather than merged with an ordering flag, because "which
     #: side of setup-node" is the only question either field answers.
     post_setup_steps: tuple[Step, ...] = ()
+    #: Value for setup-node's `cache` input, which restores this manager's
+    #: package store keyed on the lockfile. None means the input is omitted
+    #: entirely: setup-node's v7 source supports only npm/pnpm/yarn, so bun
+    #: has no value to give, and yarn-berry is excluded because setup-node
+    #: detects the yarn version by running `yarn --version` during its own
+    #: step -- before our `corepack enable` post-setup step has run -- so a
+    #: berry repo would be misdetected as the runner's Yarn 1.22 and a
+    #: classic cache directory saved that berry never reads.
+    cache_key: Optional[str] = None
 
 
 REGISTRY: dict[str, StackSpec] = {
@@ -128,6 +137,7 @@ NODE_PACKAGE_MANAGERS: dict[str, PackageManager] = {
         lockfiles=("package-lock.json",),
         install=("npm", "ci"),
         test=("npm", "test"),
+        cache_key="npm",
     ),
     "pnpm": PackageManager(
         id="pnpm",
@@ -139,6 +149,9 @@ NODE_PACKAGE_MANAGERS: dict[str, PackageManager] = {
             uses="pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271",
             uses_version="v6.0.9",
         ),),
+        # Cache resolution runs `pnpm store path` during setup-node, which
+        # only works because setup_steps put pnpm on the runner first.
+        cache_key="pnpm",
     ),
     # Yarn 1 and Yarn 2+ are two toolchains sharing one lockfile name, and
     # their install flags are mutually incompatible: --frozen-lockfile is an
@@ -151,6 +164,7 @@ NODE_PACKAGE_MANAGERS: dict[str, PackageManager] = {
         lockfiles=("yarn.lock",),
         install=("yarn", "install", "--frozen-lockfile"),
         test=("yarn", "test"),
+        cache_key="yarn",
     ),
     "yarn-berry": PackageManager(
         id="yarn-berry",

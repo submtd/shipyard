@@ -73,7 +73,7 @@ def test_node_job_wires_node_version_and_npm_steps():
         stacks.Step(
             uses=stacks.REGISTRY["node"].setup_uses,
             uses_version=stacks.REGISTRY["node"].setup_uses_version,
-            with_={"node-version": "${{ matrix.node }}"},
+            with_={"node-version": "${{ matrix.node }}", "cache": "npm"},
         ),
         stacks.Step(run="npm ci"),
         stacks.Step(run="npm test"),
@@ -133,3 +133,47 @@ def test_unset_manager_falls_back_to_the_default():
     cfg = Config(name="ci", stacks={"node": StackConfig(versions=("20",))})
     assert [s.run for s in build_plan(cfg).jobs[0].steps if s.run] == [
         "npm ci", "npm test"]
+
+
+def _setup_node_with(cfg):
+    """The setup-node step's with_ mapping for a single-job plan."""
+    (job,) = build_plan(cfg).jobs
+    (setup,) = [s for s in job.steps
+                if s.uses == stacks.REGISTRY["node"].setup_uses]
+    return setup.with_
+
+
+@pytest.mark.parametrize("manager_id, cache_key", [
+    ("npm", "npm"),
+    ("pnpm", "pnpm"),
+    ("yarn1", "yarn"),
+])
+def test_setup_node_carries_the_managers_cache_input(manager_id, cache_key):
+    cfg = Config(name="ci", stacks={
+        "node": StackConfig(versions=("20",), package_manager=manager_id)})
+    assert _setup_node_with(cfg) == {
+        "node-version": "${{ matrix.node }}", "cache": cache_key}
+
+
+@pytest.mark.parametrize("manager_id", ["yarn-berry", "bun"])
+def test_setup_node_omits_cache_when_the_manager_has_no_key(manager_id):
+    cfg = Config(name="ci", stacks={
+        "node": StackConfig(versions=("20",), package_manager=manager_id)})
+    assert _setup_node_with(cfg) == {"node-version": "${{ matrix.node }}"}
+
+
+def test_cache_input_renders_after_node_version():
+    """with_ renders in insertion order; node-version staying first keeps the
+    golden diff to a single added line."""
+    cfg = Config(name="ci", stacks={"node": StackConfig(versions=("20",))})
+    assert list(_setup_node_with(cfg)) == ["node-version", "cache"]
+
+
+def test_python_setup_step_gains_no_cache_input():
+    """The issue is node-only; setup-python's `cache: pip` is a separate
+    decision."""
+    cfg = Config(name="ci", stacks={"python": StackConfig(versions=("3.12",))})
+    (job,) = build_plan(cfg).jobs
+    (setup,) = [s for s in job.steps
+                if s.uses == stacks.REGISTRY["python"].setup_uses]
+    assert setup.with_ == {"python-version": "${{ matrix.python }}"}
